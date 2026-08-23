@@ -17,7 +17,7 @@
 
 - **対応国 (MVP)**: 日本・アメリカ・イギリス・ドイツ・インド・ブラジル・ケニア・韓国の8カ国
 - **ニュース取得**: NewsData.io（または World News API）
-- **AI要約**: Anthropic API (Claude) で日本語1〜2文の要約+文脈補足
+- **AI要約**: Google Gemini API（`gemini-2.5-flash-lite`、コスト最優先）で日本語1〜2文の要約+文脈補足
 - **レイアウト**: 新聞風／2chまとめ風をトグルで切替。新聞風は選択国数に応じて紙面割りが自動決定
 - **技術**: Next.js (App Router, TypeScript) + Tailwind CSS、更新は手動リフレッシュ（将来cron化可能な構造）
 

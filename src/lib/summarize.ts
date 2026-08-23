@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { Article } from "@/lib/news/types";
 
 const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の読者向けに、各記事について次の2つを作成してください。
@@ -36,19 +35,34 @@ function extractJsonArray(text: string): SummaryResult[] {
   return parsed;
 }
 
-async function requestSummaries(client: Anthropic, model: string, articles: Article[]): Promise<SummaryResult[]> {
-  const response = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildUserContent(articles) }],
+interface GeminiResponse {
+  candidates?: { content?: { parts?: { text?: string }[] } }[];
+  error?: { message?: string };
+}
+
+async function requestSummaries(
+  apiKey: string,
+  model: string,
+  articles: Article[],
+): Promise<SummaryResult[]> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: buildUserContent(articles) }] }],
+      generationConfig: { responseMimeType: "application/json" },
+    }),
   });
 
-  const text = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
+  const data = (await res.json()) as GeminiResponse;
+  if (!res.ok) {
+    throw new Error(data.error?.message ?? `Gemini API がエラーを返しました (status ${res.status})`);
+  }
 
+  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
   return extractJsonArray(text);
 }
 
@@ -59,17 +73,16 @@ async function requestSummaries(client: Anthropic, model: string, articles: Arti
 export async function summarizeArticles(articles: Article[]): Promise<Article[]> {
   if (articles.length === 0) return articles;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY が設定されていません。.env に設定してください。");
+    throw new Error("GEMINI_API_KEY が設定されていません。.env に設定してください。");
   }
-  const model = process.env.ANTHROPIC_MODEL || "claude-opus-5";
-  const client = new Anthropic({ apiKey });
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 
   let results: SummaryResult[] | null = null;
   for (let attempt = 0; attempt < 2 && results === null; attempt++) {
     try {
-      results = await requestSummaries(client, model, articles);
+      results = await requestSummaries(apiKey, model, articles);
     } catch {
       results = null;
     }

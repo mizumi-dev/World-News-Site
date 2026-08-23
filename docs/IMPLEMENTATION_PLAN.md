@@ -15,7 +15,7 @@
 対象は日本(jp)のみ。ここが最重要フェーズ。
 
 1. NewsData.io アダプタ（SPEC 4.1）。
-2. Anthropic 要約ラッパー（SPEC 4.2）。バッチ1コールでJSONを受け取り、パース失敗時のリトライとフォールバックを実装。
+2. Gemini 要約ラッパー（SPEC 4.2）。バッチ1コールでJSONを受け取り、パース失敗時のリトライとフォールバックを実装。
 3. ファイルキャッシュ（SPEC 4.4）とパイプライン（SPEC 4.3）。
 4. `/api/refresh` と `/api/news`（SPEC 4.5）。
 5. 最小UI: 国固定(jp)・更新ボタン・素朴なカードリスト表示のみ。レイアウト2種はまだ作らない。
@@ -39,10 +39,10 @@
 README.md を全面書き換え:
 
 - プロジェクト概要とスクリーンショット（任意）
-- APIキー取得手順（NewsData.io / World News API / Anthropic Console、それぞれ無料枠の注意）
+- APIキー取得手順（NewsData.io / World News API / Google AI Studio (Gemini)、それぞれ無料枠の注意）
 - ローカル起動手順（`cp .env.example .env` → キー記入 → `npm install` → `npm run dev`）
 - 設定項目一覧（env 変数の表）
-- 拡張ポイント: 国の増やし方（`countries.ts`）、cron化（`POST /api/refresh` を叩く。Vercel Cron 設定例を記載）、要約モデルの変更（`ANTHROPIC_MODEL`。コスト重視なら `claude-haiku-4-5`）
+- 拡張ポイント: 国の増やし方（`countries.ts`）、cron化（`POST /api/refresh` を叩く。Vercel Cron 設定例を記載）、要約モデルの変更（`GEMINI_MODEL`。精度重視なら `gemini-2.5-flash`）
 
 **完了条件**: REQUIREMENTS 3 の受け入れ条件 7。
 
@@ -50,6 +50,6 @@ README.md を全面書き換え:
 
 - 記事本文の保存・表示（要約入力に使ったら破棄する）
 - APIキーのクライアントサイドへの露出（`NEXT_PUBLIC_` プレフィックスのキー禁止）
-- 記事1件ごとの Anthropic API 個別コール（必ず国単位バッチ）
+- 記事1件ごとの Gemini API 個別コール（必ず国単位バッチ）
 - 仕様外のライブラリ追加（UIコンポーネント集、状態管理、ORM等）
-- モデルIDの創作（SPEC記載の `claude-opus-5` / `claude-haiku-4-5` をそのまま使う。日付サフィックスを付けない）
+- モデルIDの創作（SPEC記載の `gemini-2.5-flash-lite` / `gemini-2.5-flash` をそのまま使う）

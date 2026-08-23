@@ -9,7 +9,7 @@
 | フレームワーク | Next.js 15+（App Router, TypeScript） | フロント＋APIルートを単一アプリで完結、Vercel等へそのままデプロイ可 |
 | スタイリング | Tailwind CSS | 新聞風/まとめ風の2テーマをユーティリティで素早く作れる |
 | ニュース取得 | NewsData.io（第一候補） / World News API（代替） | どちらも無料枠あり。アダプタ層で差し替え可能にする |
-| AI要約 | Anthropic API 公式SDK `@anthropic-ai/sdk` | 要約・翻訳・文脈補足 |
+| AI要約 | Google Gemini API（`gemini-2.5-flash-lite`、REST fetch呼び出し） | 要約・翻訳・文脈補足。コスト最優先で最安クラスのモデルを採用 |
 | キャッシュ | ファイルベース（`.cache/` にJSON保存） | DB不要でローカル完結。将来 Redis/DB に差し替えられるようインターフェースを切る |
 | 状態管理 | React state + localStorage | 認証なしの個人設定はクライアント保存で十分 |
 
@@ -44,7 +44,7 @@ world-news-site/
 │   │   │   ├── newsdata.ts        # NewsData.io アダプタ
 │   │   │   ├── worldnewsapi.ts    # World News API アダプタ
 │   │   │   └── index.ts           # env NEWS_PROVIDER でアダプタ選択
-│   │   ├── summarize.ts           # Anthropic API ラッパー（要約+見出し翻訳）
+│   │   ├── summarize.ts           # Gemini API ラッパー（要約+見出し翻訳）
 │   │   ├── cache.ts               # ファイルキャッシュ（get/set, 記事ID単位の要約キャッシュ含む）
 │   │   └── pipeline.ts            # 取得→要約→キャッシュ の一連処理
 │   └── types/index.ts             # 共有型
@@ -104,8 +104,9 @@ export const COUNTRIES: Country[] = [
 
 ### 4.2 AI要約ラッパー（`src/lib/summarize.ts`）
 
-- SDK: `@anthropic-ai/sdk`。`new Anthropic()`（`ANTHROPIC_API_KEY` を環境から自動解決）。
-- モデルは env `ANTHROPIC_MODEL` で指定。**デフォルト `claude-opus-5`**。コストを抑えたい場合はユーザー判断で `claude-haiku-4-5` 等に変更できる旨を README に記載する。
+- Google Generative Language API を `fetch` で直接呼び出す（追加SDK依存なし。NewsProviderアダプタと同じ設計思想）。エンドポイント: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}`。
+- モデルは env `GEMINI_MODEL` で指定。**デフォルト `gemini-2.5-flash-lite`**（コスト最優先の最安クラス）。精度を上げたい場合はユーザー判断で `gemini-2.5-flash` 等に変更できる旨を README に記載する。
+- リクエストには `generationConfig: { responseMimeType: "application/json" }` を指定し、JSON出力を安定させる。
 - **1リクエストで1国分（最大10記事）をまとめてバッチ要約**する（記事ごとに1コールしない。コストとレイテンシ削減）。
 - 入力: 記事番号付きの `originalTitle`（+あれば description 冒頭200字）。出力はJSONで受け取る:
 
@@ -186,8 +187,8 @@ refreshCountries(codes: string[]):
 NEWS_PROVIDER=newsdata            # newsdata | worldnewsapi
 NEWSDATA_API_KEY=                 # https://newsdata.io で取得
 WORLDNEWS_API_KEY=                # https://worldnewsapi.com で取得（worldnewsapi 使用時のみ）
-ANTHROPIC_API_KEY=                # https://console.anthropic.com で取得
-ANTHROPIC_MODEL=claude-opus-5     # 要約に使うモデル。コスト重視なら claude-haiku-4-5
+GEMINI_API_KEY=                   # https://aistudio.google.com/apikey で取得
+GEMINI_MODEL=gemini-2.5-flash-lite # 要約に使うモデル。コスト最優先の最安クラス
 MAX_ARTICLES_PER_COUNTRY=10
 CACHE_TTL_MINUTES=15
 ```
