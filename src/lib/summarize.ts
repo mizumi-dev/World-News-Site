@@ -3,10 +3,13 @@ import { TAGS } from "@/lib/config/tags";
 
 const TAG_IDS = TAGS.map((t) => t.id);
 
-const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の読者向けに、各記事について次の3つを作成してください。
+// tagはフィード側で既に確定している記事があるため、AIには「未確定のものだけ」推測させる。
+// index行に "(タグ確定済み)" と付いている記事は tag を省略してよい（省略時は既存タグを保持する）。
+const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の読者向けに、各記事について次を作成してください。
 (1) 自然な日本語の見出し (titleJa)
 (2) 1〜2文の日本語要約 (summaryJa)。可能なら背景や重要性を一言補足してください。
 (3) 記事に最もふさわしいタグを1つ (tag)。次の中から必ず1つ選ぶこと: ${TAG_IDS.join(", ")}
+  ただし「(タグ確定済み)」と付記された記事は tag を出力しなくてよい（省略可）。
 原文から推測できない詳細を創作してはいけません。
 出力は次の形式のJSONオブジェクトのみとしてください。説明文やコードブロックのマークアップは付けないでください。
 {"results":[{"index":0,"titleJa":"...","summaryJa":"...","tag":"..."}]}`;
@@ -31,7 +34,8 @@ function buildUserContent(articles: Article[]): string {
   return articles
     .map((a, i) => {
       const excerpt = a.excerptForSummary ? `\n概要: ${a.excerptForSummary.slice(0, 200)}` : "";
-      return `${i}. 見出し: ${a.originalTitle}${excerpt}`;
+      const tagNote = a.tag ? " (タグ確定済み)" : "";
+      return `${i}. 見出し: ${a.originalTitle}${tagNote}${excerpt}`;
     })
     .join("\n\n");
 }
@@ -148,7 +152,8 @@ export async function summarizeArticles(articles: Article[]): Promise<SummarizeO
     articles: articles.map((article, i) => {
       const result = byIndex.get(i);
       if (!result) return article;
-      const tag = result.tag && TAG_IDS.includes(result.tag) ? result.tag : "other";
+      // フィード由来のタグ(article.tag)があれば優先する。無ければAIの推測を使う
+      const tag = article.tag ?? (result.tag && TAG_IDS.includes(result.tag) ? result.tag : "other");
       return { ...article, titleJa: result.titleJa, summaryJa: result.summaryJa, tag };
     }),
   };

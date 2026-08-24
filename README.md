@@ -13,12 +13,15 @@
 
 ## 概要
 
-- **対応国 (MVP)**: 日本・アメリカ・イギリス・ドイツ・インド・ブラジル・ケニア・韓国の8カ国
-- **ニュース取得**: NewsData.io（または World News API）
-- **AI要約**: Qwen API（Alibaba Cloud、`qwen3.7-flash`、コスト最優先）で日本語1〜2文の要約+文脈補足
+- **対応国**: 9地域33カ国（`src/lib/config/countries.ts`）。地域別にグルーピングして選択できる
+- **ニュース取得**: Google News RSS（総合＋トピック別フィードを統合。無料・APIキー不要）。`NewsData.io`/`World News API`にも切替可能
+- **AI要約**: Qwen API（Alibaba Cloud、`qwen3.7-flash`、コスト最優先）で日本語見出し・1〜2文要約・タグ付け
+- **タグ**: 12種の固定タグに色付き表示。Google Newsのトピック別フィード由来の記事はタグが確定し、AIの推測を使わない
+- **検索**: 見出し・要約の全文検索
 - **レイアウト**: 新聞風／2chまとめ風をトグルで切替。新聞風は選択国数に応じて紙面割りが自動決定
-- **技術**: Next.js (App Router, TypeScript) + Tailwind CSS、更新は手動リフレッシュ（将来cron化可能な構造）
-- **キャッシュ**: ローカル開発はファイル(`.cache/`)、Vercel等へのデプロイ時はUpstash Redis(永続化)を自動使用
+- **技術**: Next.js (App Router, TypeScript) + Tailwind CSS
+- **更新方式**: 収集と配信を分離。裏側でGitHub Actions（高頻度・シャード分割）とVercel Cron（1日1回の補修）が自動更新し、閲覧はISRキャッシュを読むだけ。手動更新ボタンは無い（`/api/refresh`は認証必須で、公開後の無制限なAI課金消費を防ぐため）
+- **キャッシュ**: ローカル開発はファイル(`.cache/`)、Vercel等へのデプロイ時はUpstash Redis(永続化)を自動使用。要約は`dedupKey`単位で1年保持し、同じ記事の再要約を避ける
 
 ## APIキーの取得方法
 
@@ -40,7 +43,16 @@ npm install
 npm run dev
 ```
 
-ブラウザで http://localhost:3000 を開き、国を選んで「更新」ボタンを押す。
+ブラウザで http://localhost:3000 を開く。ローカルでは手動更新ボタンが無いため、記事を取得するには
+`/api/refresh` を直接叩く（`CRON_SECRET`未設定のローカルでは認証チェックがスキップされない点に注意し、
+`.env`に適当な値を入れて同じ値をヘッダーに渡す）:
+
+```bash
+curl -X POST http://localhost:3000/api/refresh \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"countries":["jp","us","gb"]}'
+```
 
 ## Vercelへのデプロイ
 
@@ -51,9 +63,27 @@ npm run dev
    - Vercelダッシュボード → 「Add New...」→「Project」→ このGitHubリポジトリを選択してインポート
    - `main` ブランチへのpushで自動デプロイされる
 3. **環境変数を設定する**（Vercelプロジェクト → Settings → Environment Variables）
-   - `.env.example` に書かれている変数（`NEWSDATA_API_KEY` / `QWEN_API_KEY` など）をすべて登録する
+   - `.env.example` に書かれている変数をすべて登録する
+   - `CRON_SECRET` は必ずランダムな値を生成して設定する（`openssl rand -hex 32`）。未設定だと自動更新エンドポイントが常にUnauthorizedになる
    - Upstashを手動作成した場合は `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` も追加する
-4. デプロイ完了後、発行されたURLにアクセスして動作確認する
+4. デプロイ完了後、発行されたURLにアクセスして動作確認する（この時点ではまだ記事が無いので、後述のGitHub Actionsを設定するか、`/api/cron/refresh-shard`を手動で1回叩く）
+
+## 自動更新の設定（GitHub Actions）
+
+Vercel Hobbyプランのcronは1日1回しか実行できないため、高頻度の自動更新は
+GitHub Actions（`.github/workflows/scheduled-refresh.yml`）が担当する。30分毎に
+`/api/cron/refresh-shard` を叩き、呼び出し時刻から自動計算される「担当国(シャード)」だけを
+更新する。6シャード×30分間隔で、全33カ国を3時間で一巡する。
+
+設定手順:
+
+1. リポジトリの Settings → Secrets and variables → Actions で以下を登録する
+   - `APP_URL`: デプロイ先のURL（例: `https://your-app.vercel.app`）
+   - `CRON_SECRET`: Vercel側に設定した`CRON_SECRET`と同じ値
+2. これだけで自動的に有効になる（`workflow_dispatch`で手動実行も可能）
+
+Vercel Cron（`vercel.json`）による1日1回の全国更新は、GitHub Actions側の取りこぼしに対する
+補修として引き続き動作する。
 
 ## CI（GitHub Actions）
 
@@ -61,8 +91,9 @@ npm run dev
 
 ## 今後の拡張ポイント
 
-- **国を増やす**: `src/lib/config/countries.ts` に1行追加するだけでよい（`langHint` にはNewsData.ioの[言語コード](https://newsdata.io/documentation)を ISO 639-1 で指定する）
-- **cron化**: `POST /api/refresh` を Vercel Cron（`vercel.json` に `crons` を追加）やGitHub Actionsのスケジュール実行から叩けば、手動更新なしで自動更新できる
+- **国を増やす**: `src/lib/config/countries.ts` に1行追加するだけでよい（`region`は選択UIのグルーピングに、`langHint`はGoogle News RSS/NewsData.ioの言語指定に使う）
+- **タグを増やす**: `src/lib/config/tags.ts` に追加する。Google Newsのトピック別フィードに対応させる場合は `src/lib/news/googlenews.ts` の `TOPIC_TO_TAG` も更新する
 - **要約モデルの変更**: `.env` の `QWEN_MODEL` を変更する（利用可能なモデル名はQwenCloudのコンソールで確認）
-- **ニュース取得元の切り替え**: `.env` の `NEWS_PROVIDER` を `worldnewsapi` に変更する
+- **ニュース取得元の切り替え**: `.env` の `NEWS_PROVIDER` を `newsdata` / `worldnewsapi` に変更する（無料枠に制約があるため、`googlenews`のフォールバック用途を想定）
 - **キャッシュの差し替え**: `src/lib/cache/` の `KeyValueBackend` インターフェースを実装すれば、Upstash以外のストアにも対応できる
+- **更新頻度・シャード数の調整**: `src/app/api/cron/refresh-shard/route.ts` の `SHARD_INTERVAL_MINUTES` / `NUM_SHARDS` と、ワークフローのcron式を合わせて変更する

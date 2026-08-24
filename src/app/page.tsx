@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { getCountry } from "@/lib/config/countries";
 import { CountrySelector } from "@/components/CountrySelector";
 import { LayoutToggle, type LayoutMode } from "@/components/LayoutToggle";
-import { RefreshButton } from "@/components/RefreshButton";
 import { NewspaperLayout } from "@/components/NewspaperLayout";
 import { MatomeLayout } from "@/components/MatomeLayout";
 import { TagFilter } from "@/components/TagFilter";
@@ -27,8 +26,6 @@ export default function Home() {
   const [sectionOverrides, setSectionOverrides] = useState<Record<number, string>>({});
 
   const [newsData, setNewsData] = useState<CountryNewsMap>({});
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshErrors, setRefreshErrors] = useState<{ code: string; error: string }[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -70,17 +67,6 @@ export default function Home() {
     return Object.fromEntries(entries);
   }, []);
 
-  const loadCached = useCallback(
-    async (codes: string[]) => {
-      if (codes.length === 0) {
-        setNewsData({});
-        return;
-      }
-      setNewsData(await fetchNewsForCountries(codes));
-    },
-    [fetchNewsForCountries],
-  );
-
   // 選択国が変わるたびにキャッシュ済みニュースを読み込む
   useEffect(() => {
     if (!hydrated) return;
@@ -92,38 +78,6 @@ export default function Home() {
       ignore = true;
     };
   }, [hydrated, selectedCountries, fetchNewsForCountries]);
-
-  const handleRefresh = useCallback(async () => {
-    if (selectedCountries.length === 0) return;
-    setIsRefreshing(true);
-    setRefreshErrors([]);
-    try {
-      const res = await fetch("/api/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // 手動の「更新」ボタンはユーザーの明示的な操作なので、TTLキャッシュを無視して必ず取得し直す
-        body: JSON.stringify({ countries: selectedCountries, force: true }),
-      });
-      const data = await res.json();
-      const results = (data.results ?? []) as {
-        code: string;
-        ok: boolean;
-        error?: string;
-        warning?: string;
-      }[];
-      const messages = results.flatMap((r) => {
-        if (!r.ok) return [{ code: r.code, error: r.error ?? "更新に失敗しました" }];
-        if (r.warning) return [{ code: r.code, error: r.warning }];
-        return [];
-      });
-      setRefreshErrors(messages);
-      await loadCached(selectedCountries);
-    } catch (err) {
-      setRefreshErrors([{ code: "", error: err instanceof Error ? err.message : "更新に失敗しました" }]);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [selectedCountries, loadCached]);
 
   const selectedCountryObjects = selectedCountries
     .map((code) => getCountry(code))
@@ -152,6 +106,13 @@ export default function Home() {
     (entry) => entry.articles.length > 0,
   );
 
+  // 表示中の国のうち最も新しい更新時刻。更新は裏側の定期実行が担うため、ここは表示のみ
+  const lastUpdatedAt = Object.values(newsData)
+    .map((entry) => entry.fetchedAt)
+    .filter((v): v is string => Boolean(v))
+    .sort()
+    .at(-1);
+
   return (
     <div className="max-w-5xl mx-auto w-full px-4 py-8 flex flex-col gap-6">
       <header className="flex flex-col gap-4">
@@ -159,7 +120,6 @@ export default function Home() {
           <h1 className="text-xl font-bold">世界ニュースまとめ（プロトタイプ）</h1>
           <div className="flex items-center gap-2 shrink-0">
             <LayoutToggle layout={layout} onChange={setLayout} />
-            <RefreshButton isRefreshing={isRefreshing} onClick={handleRefresh} />
           </div>
         </div>
         <CountrySelector selected={selectedCountries} onChange={setSelectedCountries} />
@@ -167,20 +127,13 @@ export default function Home() {
           <TagFilter selected={selectedTags} onChange={setSelectedTags} />
           <SearchBox value={searchQuery} onChange={setSearchQuery} />
         </div>
+        {lastUpdatedAt && (
+          <p className="text-xs text-black/50 dark:text-white/50">
+            最終更新: {new Date(lastUpdatedAt).toLocaleString("ja-JP")}
+            （ニュースは裏側で自動更新されています）
+          </p>
+        )}
       </header>
-
-      {refreshErrors.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {refreshErrors.map((e, i) => (
-            <p
-              key={i}
-              className="text-sm text-red-600 border border-red-200 bg-red-50 rounded p-3"
-            >
-              {getCountry(e.code)?.nameJa ?? "更新"}: {e.error}
-            </p>
-          ))}
-        </div>
-      )}
 
       {selectedCountries.length === 0 && (
         <p className="text-sm text-black/60 dark:text-white/60">
@@ -188,9 +141,9 @@ export default function Home() {
         </p>
       )}
 
-      {selectedCountries.length > 0 && !hasAnyArticles && refreshErrors.length === 0 && (
+      {selectedCountries.length > 0 && !hasAnyArticles && (
         <p className="text-sm text-black/60 dark:text-white/60">
-          まだニュースがありません。「更新」を押してください。
+          まだニュースがありません。しばらくしてから再度アクセスしてください。
         </p>
       )}
 

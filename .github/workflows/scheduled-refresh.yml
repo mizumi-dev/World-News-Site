@@ -1,0 +1,29 @@
+name: Scheduled news refresh
+
+# Vercel Hobbyプランのcronは1日1回しか実行できないため、高頻度な自動更新はここで担う。
+# /api/cron/refresh-shard は「現在時刻」から自動的に担当国(シャード)を決めるので、
+# このワークフローは単純に一定間隔で叩くだけでよい(docs/ARCHITECTURE_REVIEW.md参照)。
+# 必要なリポジトリSecrets:
+#   APP_URL      - デプロイ先のURL(例: https://your-app.vercel.app)
+#   CRON_SECRET  - Vercel側の環境変数 CRON_SECRET と同じ値
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call refresh-shard endpoint
+        run: |
+          status=$(curl -sS -o response.json -w "%{http_code}" \
+            --max-time 90 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/refresh-shard")
+          echo "HTTP status: $status"
+          cat response.json
+          if [ "$status" -ge 300 ]; then
+            echo "refresh-shard failed"
+            exit 1
+          fi

@@ -114,6 +114,40 @@ RSS化して取得件数が増えるほど重要になる。
 
 詳細は各コミット、および `docs/SPEC.md` 4.4・4.5・8-2 を参照。
 
+## 追記: ボリューム不足と公開時のコスト・安全性への対応（2026-08-24）
+
+「ジャンルで絞るとほとんど記事が出ない」という問題への対応として、以下を追加で実施した。
+
+1. **トピック別フィードの追加**（`src/lib/news/googlenews.ts`）
+   総合フィードに加え、Google Newsの `WORLD/BUSINESS/TECHNOLOGY/SPORTS/SCIENCE/HEALTH/ENTERTAINMENT`
+   トピック別RSSを並列取得して統合する。1国あたりの取得量が大幅に増えるだけでなく、
+   **トピックからタグが確定する**ため、AIにタグを推測させる必要がなくなる
+   （`src/lib/summarize.ts` はタグ確定済みの記事にはタグ生成を求めない）。
+   1フィードの失敗は無視し、成功したフィードのみで続行する。
+
+2. **新規要約数の上限**（`src/lib/pipeline.ts` の `MAX_NEW_SUMMARIES_PER_RUN`）
+   取得量が増えてもAIコストが青天井にならないよう、1回のrefreshで新規に要約する
+   dedupKey数に上限を設けた。超過分は次回実行時に持ち越される。
+
+3. **公開を前提にした `/api/refresh` の保護**
+   これまで認証なしで誰でも叩けたため、公開すればAI課金とニュースAPI枠を無制限に
+   消費されるリスクがあった。`/api/cron/refresh` と同じ `CRON_SECRET` による認証を追加し、
+   ブラウザからの手動更新ボタンは廃止した（収集と配信を完全に分離する、という本ドキュメントの
+   方針をそのまま実装した形）。
+
+4. **GitHub Actionsによる高頻度スケジューラ**（`.github/workflows/scheduled-refresh.yml`、
+   `src/app/api/cron/refresh-shard/route.ts`）
+   Vercel Cron(Hobbyプラン)は1日1回しか実行できないため、33カ国×複数トピックを
+   高頻度で回すには不十分。GitHub Actionsから30分毎に `/api/cron/refresh-shard` を叩く
+   構成を追加した。このエンドポイントは呼び出し時刻から決定的に「担当国(シャード)」を
+   計算するため、呼び出し側は状態を持たず、単純に一定間隔で叩くだけで全国を巡回できる。
+   Vercel Cronによる1日1回の全国更新は取りこぼし補修として残す。
+
+これによりAIコストは実測ベースで月あたり数百円程度に収まる見込みで（原価は記事数、
+すなわち更新頻度で決まり、訪問者数には依存しない）、公開してもコスト面のリスクは小さい。
+公開時に残る論点は主にVercel Hobbyプランの商用利用規約とGoogle News RSSの非公式性であり、
+コスト効率そのものではない。
+
 ## 出典
 
 - [System Design: News Aggregator (100K Sources, Dedup, Personalized Ranking)](https://crackingwalnuts.com/post/news-aggregator-system-design)
