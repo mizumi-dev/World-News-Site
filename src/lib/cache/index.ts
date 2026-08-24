@@ -1,8 +1,7 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
-import path from "path";
 import type { Article } from "@/lib/news/types";
-
-const CACHE_DIR = path.join(process.cwd(), ".cache");
+import type { KeyValueBackend } from "./backend";
+import { createFileBackend } from "./file-backend";
+import { createUpstashBackend } from "./upstash-backend";
 
 export interface CountryCache {
   articles: Article[];
@@ -11,42 +10,43 @@ export interface CountryCache {
 
 type SummaryEntry = Pick<Article, "titleJa" | "summaryJa">;
 
-async function ensureCacheDir(): Promise<void> {
-  await mkdir(CACHE_DIR, { recursive: true });
+function getBackend(): KeyValueBackend {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (url && token) {
+    return createUpstashBackend(url, token);
+  }
+  return createFileBackend();
 }
 
-async function readJson<T>(filePath: string): Promise<T | null> {
+const backend = getBackend();
+
+async function readJson<T>(key: string): Promise<T | null> {
+  const raw = await backend.get(key);
+  if (raw === null) return null;
   try {
-    const raw = await readFile(filePath, "utf-8");
     return JSON.parse(raw) as T;
   } catch {
     return null;
   }
 }
 
-async function writeJson(filePath: string, data: unknown): Promise<void> {
-  await ensureCacheDir();
-  await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+function countryCacheKey(countryCode: string): string {
+  return `news:${countryCode}`;
 }
 
-function countryCachePath(countryCode: string): string {
-  return path.join(CACHE_DIR, `news-${countryCode}.json`);
-}
-
-function summariesCachePath(): string {
-  return path.join(CACHE_DIR, "summaries.json");
-}
+const SUMMARIES_KEY = "summaries";
 
 export async function getCountryCache(countryCode: string): Promise<CountryCache | null> {
-  return readJson<CountryCache>(countryCachePath(countryCode));
+  return readJson<CountryCache>(countryCacheKey(countryCode));
 }
 
 export async function setCountryCache(countryCode: string, cache: CountryCache): Promise<void> {
-  await writeJson(countryCachePath(countryCode), cache);
+  await backend.set(countryCacheKey(countryCode), JSON.stringify(cache));
 }
 
 export async function getSummaryCache(): Promise<Record<string, SummaryEntry>> {
-  return (await readJson<Record<string, SummaryEntry>>(summariesCachePath())) ?? {};
+  return (await readJson<Record<string, SummaryEntry>>(SUMMARIES_KEY)) ?? {};
 }
 
 export async function mergeSummaryCache(articles: Article[]): Promise<void> {
@@ -56,7 +56,7 @@ export async function mergeSummaryCache(articles: Article[]): Promise<void> {
       existing[article.id] = { titleJa: article.titleJa, summaryJa: article.summaryJa };
     }
   }
-  await writeJson(summariesCachePath(), existing);
+  await backend.set(SUMMARIES_KEY, JSON.stringify(existing));
 }
 
 export function isFresh(fetchedAt: string, ttlMinutes: number): boolean {

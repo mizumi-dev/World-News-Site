@@ -10,7 +10,7 @@
 | スタイリング | Tailwind CSS | 新聞風/まとめ風の2テーマをユーティリティで素早く作れる |
 | ニュース取得 | NewsData.io（第一候補） / World News API（代替） | どちらも無料枠あり。アダプタ層で差し替え可能にする |
 | AI要約 | Qwen API（Alibaba Cloud、OpenAI互換エンドポイント、REST fetch呼び出し） | 要約・翻訳・文脈補足。コスト最優先で採用 |
-| キャッシュ | ファイルベース（`.cache/` にJSON保存） | DB不要でローカル完結。将来 Redis/DB に差し替えられるようインターフェースを切る |
+| キャッシュ | ファイルベース（ローカル）/ Upstash Redis（デプロイ時） | env の有無で自動切替。ローカルはDB不要、本番はサーバーレスの永続化に対応 |
 | 状態管理 | React state + localStorage | 認証なしの個人設定はクライアント保存で十分 |
 
 Node.js 20+ を前提とする。追加のUIライブラリ・状態管理ライブラリは入れない（軽量維持）。
@@ -45,7 +45,7 @@ world-news-site/
 │   │   │   ├── worldnewsapi.ts    # World News API アダプタ
 │   │   │   └── index.ts           # env NEWS_PROVIDER でアダプタ選択
 │   │   ├── summarize.ts           # Qwen API ラッパー（要約+見出し翻訳）
-│   │   ├── cache.ts               # ファイルキャッシュ（get/set, 記事ID単位の要約キャッシュ含む）
+│   │   ├── cache/                 # キャッシュ（file/Upstash Redisをenvで自動切替。get/set, 記事ID単位の要約キャッシュ含む）
 │   │   └── pipeline.ts            # 取得→要約→キャッシュ の一連処理
 │   └── types/index.ts             # 共有型
 └── .cache/                        # 実行時生成。gitignore する
@@ -135,11 +135,14 @@ refreshCountries(codes: string[]):
 
 - 国単位で失敗を捕捉し、他国の処理は継続する。
 
-### 4.4 キャッシュ（`src/lib/cache.ts`）
+### 4.4 キャッシュ（`src/lib/cache/`）
 
-- `.cache/news-{code}.json` に国別の記事リスト+取得時刻、`.cache/summaries.json` に記事ID→要約のマップを保存。
+- `KeyValueBackend`（`get`/`set`のみの最小インターフェース）を介して、国別の記事リスト+取得時刻（キー `news:{code}`）と記事ID→要約のマップ（キー `summaries`）を保存する。
+- バックエンドは env `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` の有無で自動選択（`src/lib/cache/index.ts`）:
+  - 未設定（ローカル開発）: `.cache/` フォルダにJSONファイルとして保存（`file-backend.ts`）
+  - 設定あり（Vercel等へのデプロイ時）: Upstash RedisのREST APIを直接 `fetch` で呼び出す（`upstash-backend.ts`）。サーバーレス環境はファイルシステムが永続しないため必須
 - `GET /api/news` はキャッシュのみ読む（外部APIを叩かない）。
-- `POST /api/refresh` はキャッシュ取得時刻が `CACHE_TTL_MINUTES`（デフォルト15分）以内の国をスキップする（`?force=true` で無視）。
+- `POST /api/refresh` はキャッシュ取得時刻が `CACHE_TTL_MINUTES`（デフォルト15分）以内、かつ**全記事が要約済み**の場合のみスキップする（`?force=true` で無視）。要約が一部でも欠けているキャッシュは新鮮とみなさず再試行する。
 
 ### 4.5 APIルート
 
@@ -198,4 +201,4 @@ CACHE_TTL_MINUTES=15
 
 - **国の追加**: `countries.ts` に1行追加するだけで動く。200カ国化はプロバイダの国コード対応表の拡充のみ。
 - **cron化**: `POST /api/refresh` を Vercel Cron / GitHub Actions / 任意のスケジューラから叩く。認証が必要になったら `REFRESH_SECRET` env + Bearer 検証を同ルートに足す。
-- **キャッシュ差し替え**: `cache.ts` の get/set インターフェースを保ったまま Redis/SQLite 実装に置換。
+- **キャッシュ差し替え**: 対応済み（`src/lib/cache/`）。別のストアに変えたい場合は `KeyValueBackend` インターフェースを実装するファイルを追加し、`cache/index.ts` の `getBackend()` に分岐を足すだけでよい。
