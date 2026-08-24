@@ -17,13 +17,20 @@ jobs:
     steps:
       - name: Call refresh-shard endpoint
         run: |
-          status=$(curl -sS -o response.json -w "%{http_code}" \
+          # APP_URLの末尾にスラッシュが付いていると "//api/..." になり、
+          # Vercel側の正規化リダイレクト(308)を踏んでしまうため取り除く。
+          # -L でリダイレクトも追従する(同一ホストであればAuthorizationヘッダーも引き継がれる)。
+          app_url="${APP_URL%/}"
+          status=$(curl -sS -L -o response.json -w "%{http_code}" \
             --max-time 90 \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/cron/refresh-shard")
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${app_url}/api/cron/refresh-shard")
           echo "HTTP status: $status"
           cat response.json
           if [ "$status" -ge 300 ]; then
             echo "refresh-shard failed"
             exit 1
           fi
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
