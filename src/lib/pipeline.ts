@@ -129,12 +129,25 @@ export async function refreshCountries(codes: string[], force = false): Promise<
         return { code: state.code, ok: true, count: state.articles.length };
       }
 
-      const articles = state.articles
-        .map((article) => {
-          const summary = allSummaries[dedupKeyByArticleId.get(article.id)!];
-          return summary ? { ...article, ...summary } : article;
-        })
-        .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      const withSummary = state.articles.map((article) => {
+        const summary = allSummaries[dedupKeyByArticleId.get(article.id)!];
+        return summary ? { ...article, ...summary } : article;
+      });
+
+      // 同じ国内で実質同じ記事（通信社配信等）が複数媒体から取れた場合、
+      // 発行時刻が最も早い（一次情報に近い）ものだけを代表として残す
+      const representativeByDedupKey = new Map<string, Article>();
+      for (const article of withSummary) {
+        const dedupKey = dedupKeyByArticleId.get(article.id)!;
+        const existing = representativeByDedupKey.get(dedupKey);
+        if (!existing || new Date(article.publishedAt) < new Date(existing.publishedAt)) {
+          representativeByDedupKey.set(dedupKey, article);
+        }
+      }
+
+      const articles = [...representativeByDedupKey.values()].sort(
+        (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+      );
 
       await setCountryCache(state.code, { articles, fetchedAt: new Date().toISOString() });
 
