@@ -45,6 +45,9 @@ export function createNewsDataProvider(country: Country): NewsProvider {
       url.searchParams.set("apikey", apiKey);
       url.searchParams.set("country", countryCode);
       url.searchParams.set("size", String(limit));
+      if (country.langHint) {
+        url.searchParams.set("language", country.langHint);
+      }
 
       let res: Response;
       try {
