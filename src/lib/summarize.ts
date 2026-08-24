@@ -75,6 +75,10 @@ async function requestSummaries(
       ],
       response_format: { type: "json_object" },
       max_tokens: MAX_OUTPUT_TOKENS,
+      // Qwen3系は思考モードがデフォルトで有効。非ストリーミング呼び出しでは
+      // 思考が長引いて応答が返らずタイムアウトするため明示的に無効化する。
+      // 見出しの翻訳と要約に推論は不要で、レイテンシとコストの削減にもなる。
+      enable_thinking: false,
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
