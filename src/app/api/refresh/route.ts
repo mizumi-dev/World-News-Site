@@ -4,6 +4,9 @@ import { COUNTRIES } from "@/lib/config/countries";
 
 const VALID_CODES = new Set(COUNTRIES.map((c) => c.code));
 
+// Qwen要約は国ごとに最大30秒×2リトライかかりうるため、Vercelのデフォルト実行時間(10秒)より長く確保する
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   let body: { countries?: unknown; force?: unknown };
   try {

@@ -82,11 +82,7 @@ async function refreshCountry(code: string, force: boolean): Promise<RefreshResu
   }
 }
 
-/** 国ごとに直列で取得→要約→キャッシュ更新を行う。1国の失敗は他国の処理を止めない */
+/** 国ごとに並列で取得→要約→キャッシュ更新を行う。1国の失敗は他国の処理を止めない */
 export async function refreshCountries(codes: string[], force = false): Promise<RefreshResult[]> {
-  const results: RefreshResult[] = [];
-  for (const code of codes) {
-    results.push(await refreshCountry(code, force));
-  }
-  return results;
+  return Promise.all(codes.map((code) => refreshCountry(code, force)));
 }

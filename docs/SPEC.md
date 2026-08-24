@@ -126,12 +126,15 @@ System prompt（固定文字列、要旨）:
 
 ```
 refreshCountries(codes: string[]):
-  for code of codes（直列。無料枠のレート制限に配慮）:
+  Promise.all(codes.map(code =>（国ごとに並列実行）:
     articles = provider.fetchTopHeadlines(code, MAX_ARTICLES_PER_COUNTRY)
     未要約の記事のみ summarize.ts でバッチ要約
     cache.set(code, { articles, fetchedAt })
-  return 国ごとの成否 { code, ok, error?, count }
+  )）
+  return 国ごとの成否 { code, ok, error?, count, warning? }
 ```
+
+国ごとに直列実行すると、8カ国分のニュース取得+AI要約で合計数十秒〜1分以上かかり、Vercelのサーバーレス関数のデフォルト実行時間(10秒)を超えて失敗する。そのため並列実行とし、`POST /api/refresh` には `export const maxDuration = 60`（秒）を設定して猶予を確保する。
 
 - 国単位で失敗を捕捉し、他国の処理は継続する。
 
