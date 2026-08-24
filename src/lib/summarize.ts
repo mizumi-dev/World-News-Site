@@ -96,7 +96,11 @@ export async function summarizeArticles(articles: Article[]): Promise<Article[]>
   for (let attempt = 0; attempt < 2 && results === null; attempt++) {
     try {
       results = await requestSummaries(apiKey, baseUrl, model, articles);
-    } catch {
+    } catch (err) {
+      console.error(
+        `[summarize] Qwen API呼び出しに失敗しました (試行${attempt + 1}/2, model=${model}):`,
+        err instanceof Error ? err.message : err,
+      );
       results = null;
     }
   }
