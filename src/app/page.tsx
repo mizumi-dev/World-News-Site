@@ -85,7 +85,8 @@ export default function Home() {
       const res = await fetch("/api/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ countries: selectedCountries }),
+        // 手動の「更新」ボタンはユーザーの明示的な操作なので、TTLキャッシュを無視して必ず取得し直す
+        body: JSON.stringify({ countries: selectedCountries, force: true }),
       });
       const data = await res.json();
       const results = (data.results ?? []) as {
