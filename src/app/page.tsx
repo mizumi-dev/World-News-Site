@@ -57,29 +57,41 @@ export default function Home() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   }, [hydrated, selectedCountries, layout, sectionOverrides]);
 
-  const loadCached = useCallback(async (codes: string[]) => {
-    if (codes.length === 0) {
-      setNewsData({});
-      return;
-    }
-    const res = await fetch(`/api/news?countries=${codes.join(",")}`);
-    const data = await res.json();
-    setNewsData(data.countries ?? {});
+  // 国ごとに独立したパス(/api/news/{code})を叩く。クエリパラメータを使わないため
+  // Next.jsがISRで静的キャッシュでき、閲覧のたびにサーバー関数やRedisを読みに行かずに済む。
+  const fetchNewsForCountries = useCallback(async (codes: string[]): Promise<CountryNewsMap> => {
+    const entries = await Promise.all(
+      codes.map(async (code) => {
+        const res = await fetch(`/api/news/${code}`);
+        const data = await res.json();
+        return [code, { articles: data.articles ?? [], fetchedAt: data.fetchedAt ?? null }] as const;
+      }),
+    );
+    return Object.fromEntries(entries);
   }, []);
+
+  const loadCached = useCallback(
+    async (codes: string[]) => {
+      if (codes.length === 0) {
+        setNewsData({});
+        return;
+      }
+      setNewsData(await fetchNewsForCountries(codes));
+    },
+    [fetchNewsForCountries],
+  );
 
   // 選択国が変わるたびにキャッシュ済みニュースを読み込む
   useEffect(() => {
     if (!hydrated) return;
     let ignore = false;
-    fetch(`/api/news?countries=${selectedCountries.join(",")}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!ignore) setNewsData(data.countries ?? {});
-      });
+    fetchNewsForCountries(selectedCountries).then((data) => {
+      if (!ignore) setNewsData(data);
+    });
     return () => {
       ignore = true;
     };
-  }, [hydrated, selectedCountries]);
+  }, [hydrated, selectedCountries, fetchNewsForCountries]);
 
   const handleRefresh = useCallback(async () => {
     if (selectedCountries.length === 0) return;

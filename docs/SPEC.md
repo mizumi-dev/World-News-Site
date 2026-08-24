@@ -151,8 +151,9 @@ refreshCountries(codes: string[]):
 
 | ルート | メソッド | 入出力 |
 |--------|---------|--------|
-| `/api/news?countries=jp,us` | GET | `{ countries: { [code]: { articles: Article[], fetchedAt: string \| null } } }` |
-| `/api/refresh` | POST | body `{ countries: string[], force?: boolean }` → `{ results: { code, ok, count, error? }[] }`。将来のcronはこのエンドポイントをそのまま叩く |
+| `/api/news/{code}` | GET | `{ articles: Article[], fetchedAt: string \| null }`。国別のパスルート（クエリパラメータを使わない）にすることで `export const revalidate = 900` によるISRが効き、閲覧のたびにRedisを読みに行かない |
+| `/api/refresh` | POST | body `{ countries: string[], force?: boolean }` → `{ results: { code, ok, count, error?, warning? }[] }`。手動更新ボタン用（常に `force: true` で呼ぶ） |
+| `/api/cron/refresh` | GET | `Authorization: Bearer {CRON_SECRET}` で認証。全対応国を更新する。`vercel.json` の `crons` から起動 |
 
 ## 5. UI仕様
 
