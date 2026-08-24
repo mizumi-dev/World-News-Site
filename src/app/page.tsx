@@ -7,6 +7,8 @@ import { LayoutToggle, type LayoutMode } from "@/components/LayoutToggle";
 import { RefreshButton } from "@/components/RefreshButton";
 import { NewspaperLayout } from "@/components/NewspaperLayout";
 import { MatomeLayout } from "@/components/MatomeLayout";
+import { TagFilter } from "@/components/TagFilter";
+import { SearchBox } from "@/components/SearchBox";
 import type { CountryNewsMap } from "@/types";
 
 const STORAGE_KEY = "wns:settings";
@@ -27,6 +29,8 @@ export default function Home() {
   const [newsData, setNewsData] = useState<CountryNewsMap>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshErrors, setRefreshErrors] = useState<{ code: string; error: string }[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // 初回マウント時に localStorage から設定を復元する
   useEffect(() => {
@@ -113,7 +117,28 @@ export default function Home() {
     .map((code) => getCountry(code))
     .filter((c): c is NonNullable<typeof c> => Boolean(c));
 
+  const query = searchQuery.trim().toLowerCase();
+  const filteredNewsData: CountryNewsMap = Object.fromEntries(
+    Object.entries(newsData).map(([code, entry]) => [
+      code,
+      {
+        ...entry,
+        articles: entry.articles.filter((article) => {
+          if (selectedTags.length > 0 && !selectedTags.includes(article.tag ?? "other")) {
+            return false;
+          }
+          if (query === "") return true;
+          const haystack = `${article.titleJa ?? ""} ${article.summaryJa ?? ""} ${article.originalTitle}`.toLowerCase();
+          return haystack.includes(query);
+        }),
+      },
+    ]),
+  );
+
   const hasAnyArticles = Object.values(newsData).some((entry) => entry.articles.length > 0);
+  const hasFilteredArticles = Object.values(filteredNewsData).some(
+    (entry) => entry.articles.length > 0,
+  );
 
   return (
     <div className="max-w-5xl mx-auto w-full px-4 py-8 flex flex-col gap-6">
@@ -126,6 +151,10 @@ export default function Home() {
           </div>
         </div>
         <CountrySelector selected={selectedCountries} onChange={setSelectedCountries} />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+          <TagFilter selected={selectedTags} onChange={setSelectedTags} />
+          <SearchBox value={searchQuery} onChange={setSearchQuery} />
+        </div>
       </header>
 
       {refreshErrors.length > 0 && (
@@ -153,18 +182,24 @@ export default function Home() {
         </p>
       )}
 
+      {selectedCountries.length > 0 && hasAnyArticles && !hasFilteredArticles && (
+        <p className="text-sm text-black/60 dark:text-white/60">
+          条件に一致する記事がありません。タグや検索条件を変えてみてください。
+        </p>
+      )}
+
       {selectedCountries.length > 0 &&
         (layout === "newspaper" ? (
           <NewspaperLayout
             countries={selectedCountryObjects}
-            newsData={newsData}
+            newsData={filteredNewsData}
             sectionOverrides={sectionOverrides}
             onSectionOverrideChange={(slotIndex, code) =>
               setSectionOverrides((prev) => ({ ...prev, [slotIndex]: code }))
             }
           />
         ) : (
-          <MatomeLayout countries={selectedCountryObjects} newsData={newsData} />
+          <MatomeLayout countries={selectedCountryObjects} newsData={filteredNewsData} />
         ))}
     </div>
   );

@@ -8,7 +8,7 @@ export interface CountryCache {
   fetchedAt: string;
 }
 
-export type SummaryEntry = Pick<Article, "titleJa" | "summaryJa">;
+export type SummaryEntry = Pick<Article, "titleJa" | "summaryJa" | "tag">;
 
 /** 要約は再生成にトークンコストがかかるので長めに保持する。無期限にするとストレージが際限なく増えるため上限を設ける */
 const SUMMARY_TTL_SECONDS = 30 * 24 * 60 * 60;

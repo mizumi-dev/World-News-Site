@@ -1,4 +1,5 @@
 import type { Article } from "@/lib/news/types";
+import { TagBadge } from "@/components/TagBadge";
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -14,6 +15,9 @@ function relativeTime(iso: string): string {
 export function ArticleCard({ article }: { article: Article }) {
   return (
     <article className="border border-black/10 rounded-lg p-4 flex flex-col gap-2 bg-white dark:bg-black/20">
+      <div className="flex items-center gap-2">
+        <TagBadge tagId={article.tag} />
+      </div>
       <h3 className="font-semibold leading-snug">
         {article.titleJa ?? article.originalTitle}
       </h3>

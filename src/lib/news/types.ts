@@ -4,6 +4,8 @@ export interface Article {
   originalTitle: string;
   titleJa: string | null;
   summaryJa: string | null;
+  /** タグID（src/lib/config/tags.ts の Tag.id）。AI要約時に付与される */
+  tag: string | null;
   sourceName: string;
   url: string;
   publishedAt: string;

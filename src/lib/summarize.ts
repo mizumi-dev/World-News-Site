@@ -1,11 +1,15 @@
 import type { Article } from "@/lib/news/types";
+import { TAGS } from "@/lib/config/tags";
 
-const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の読者向けに、各記事について次の2つを作成してください。
+const TAG_IDS = TAGS.map((t) => t.id);
+
+const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の読者向けに、各記事について次の3つを作成してください。
 (1) 自然な日本語の見出し (titleJa)
 (2) 1〜2文の日本語要約 (summaryJa)。可能なら背景や重要性を一言補足してください。
+(3) 記事に最もふさわしいタグを1つ (tag)。次の中から必ず1つ選ぶこと: ${TAG_IDS.join(", ")}
 原文から推測できない詳細を創作してはいけません。
 出力は次の形式のJSONオブジェクトのみとしてください。説明文やコードブロックのマークアップは付けないでください。
-{"results":[{"index":0,"titleJa":"...","summaryJa":"..."}]}`;
+{"results":[{"index":0,"titleJa":"...","summaryJa":"...","tag":"..."}]}`;
 
 const MAX_OUTPUT_TOKENS = 4096;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -14,6 +18,7 @@ interface SummaryResult {
   index: number;
   titleJa: string;
   summaryJa: string;
+  tag?: string;
 }
 
 export interface SummarizeOutcome {
@@ -143,7 +148,8 @@ export async function summarizeArticles(articles: Article[]): Promise<SummarizeO
     articles: articles.map((article, i) => {
       const result = byIndex.get(i);
       if (!result) return article;
-      return { ...article, titleJa: result.titleJa, summaryJa: result.summaryJa };
+      const tag = result.tag && TAG_IDS.includes(result.tag) ? result.tag : "other";
+      return { ...article, titleJa: result.titleJa, summaryJa: result.summaryJa, tag };
     }),
   };
 }

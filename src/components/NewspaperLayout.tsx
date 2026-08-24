@@ -1,4 +1,5 @@
 import { COUNTRIES, type Country } from "@/lib/config/countries";
+import { TagBadge } from "@/components/TagBadge";
 import type { CountryNewsMap } from "@/types";
 
 type SlotSize = "large" | "medium" | "small";
@@ -127,6 +128,7 @@ export function NewspaperLayout({
                   const isLead = slot.size === "large" && articleIndex === 0;
                   return (
                     <article key={article.id} className="flex flex-col gap-1">
+                      <TagBadge tagId={article.tag} />
                       <h3
                         className={
                           isLead ? "text-2xl font-bold leading-tight" : "font-semibold leading-snug"

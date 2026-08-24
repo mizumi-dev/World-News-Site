@@ -83,6 +83,7 @@ export function createWorldNewsApiProvider(country: Country): NewsProvider {
           originalTitle: r.title!,
           titleJa: null,
           summaryJa: null,
+          tag: null,
           sourceName: new URL(r.url!).hostname.replace(/^www\./, ""),
           url: r.url!,
           publishedAt: toIso(r.publish_date),

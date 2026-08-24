@@ -1,4 +1,5 @@
 import type { Country } from "@/lib/config/countries";
+import { TagBadge } from "@/components/TagBadge";
 import type { CountryNewsMap } from "@/types";
 
 export function MatomeLayout({
@@ -26,8 +27,9 @@ export function MatomeLayout({
               )}
               {articles.map((article, i) => (
                 <div key={article.id} className="px-4 py-3 flex flex-col gap-1">
-                  <p className="text-sm">
+                  <p className="text-sm flex items-center gap-1.5 flex-wrap">
                     <span className="text-black/40 dark:text-white/40 mr-1">&gt;&gt;{i + 1}</span>
+                    <TagBadge tagId={article.tag} />
                     <a
                       href={article.url}
                       target="_blank"
