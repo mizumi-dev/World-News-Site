@@ -8,7 +8,10 @@ export interface CountryCache {
   fetchedAt: string;
 }
 
-type SummaryEntry = Pick<Article, "titleJa" | "summaryJa">;
+export type SummaryEntry = Pick<Article, "titleJa" | "summaryJa">;
+
+/** 要約は再生成にトークンコストがかかるので長めに保持する。無期限にするとストレージが際限なく増えるため上限を設ける */
+const SUMMARY_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 function getBackend(): KeyValueBackend {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -21,42 +24,56 @@ function getBackend(): KeyValueBackend {
 
 const backend = getBackend();
 
-async function readJson<T>(key: string): Promise<T | null> {
-  const raw = await backend.get(key);
-  if (raw === null) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
 function countryCacheKey(countryCode: string): string {
   return `news:${countryCode}`;
 }
 
-const SUMMARIES_KEY = "summaries";
+function summaryKey(summaryId: string): string {
+  return `summary:${summaryId}`;
+}
 
 export async function getCountryCache(countryCode: string): Promise<CountryCache | null> {
-  return readJson<CountryCache>(countryCacheKey(countryCode));
+  const raw = await backend.get(countryCacheKey(countryCode));
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as CountryCache;
+  } catch {
+    return null;
+  }
 }
 
 export async function setCountryCache(countryCode: string, cache: CountryCache): Promise<void> {
   await backend.set(countryCacheKey(countryCode), JSON.stringify(cache));
 }
 
-export async function getSummaryCache(): Promise<Record<string, SummaryEntry>> {
-  return (await readJson<Record<string, SummaryEntry>>(SUMMARIES_KEY)) ?? {};
+/**
+ * 指定IDの要約をまとめて取得する。
+ * 要約は1件=1キーで保存する。全件を1つの巨大なJSONにまとめると、
+ * 国ごとの並列更新で read-modify-write が衝突して他国の要約を消してしまい、
+ * さらに更新のたびに全件を転送することになるため。
+ */
+export async function getSummaries(summaryIds: string[]): Promise<Record<string, SummaryEntry>> {
+  if (summaryIds.length === 0) return {};
+  const values = await backend.getMany(summaryIds.map(summaryKey));
+  const found: Record<string, SummaryEntry> = {};
+  summaryIds.forEach((id, i) => {
+    const raw = values[i];
+    if (raw === null || raw === undefined) return;
+    try {
+      found[id] = JSON.parse(raw) as SummaryEntry;
+    } catch {
+      // 壊れたエントリは未キャッシュ扱いにして再生成させる
+    }
+  });
+  return found;
 }
 
-export async function mergeSummaryCache(articles: Article[]): Promise<void> {
-  const existing = await getSummaryCache();
-  for (const article of articles) {
-    if (article.titleJa && article.summaryJa) {
-      existing[article.id] = { titleJa: article.titleJa, summaryJa: article.summaryJa };
-    }
-  }
-  await backend.set(SUMMARIES_KEY, JSON.stringify(existing));
+export async function saveSummaries(entries: Record<string, SummaryEntry>): Promise<void> {
+  await Promise.all(
+    Object.entries(entries).map(([id, entry]) =>
+      backend.set(summaryKey(id), JSON.stringify(entry), SUMMARY_TTL_SECONDS),
+    ),
+  );
 }
 
 export function isFresh(fetchedAt: string, ttlMinutes: number): boolean {

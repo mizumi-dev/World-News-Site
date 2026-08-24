@@ -4,10 +4,11 @@ import type { Article } from "@/lib/news/types";
 import { summarizeArticles } from "@/lib/summarize";
 import {
   getCountryCache,
-  getSummaryCache,
+  getSummaries,
   isFresh,
-  mergeSummaryCache,
+  saveSummaries,
   setCountryCache,
+  type SummaryEntry,
 } from "@/lib/cache";
 
 export interface RefreshResult {
@@ -43,7 +44,7 @@ async function refreshCountry(code: string, force: boolean): Promise<RefreshResu
     const provider = getNewsProvider(country);
     const fetched = await provider.fetchTopHeadlines(code, MAX_ARTICLES_PER_COUNTRY);
 
-    const summaryCache = await getSummaryCache();
+    const summaryCache = await getSummaries(fetched.map((a) => a.id));
     const alreadySummarized: Article[] = [];
     const needsSummary: Article[] = [];
     for (const article of fetched) {
@@ -56,9 +57,13 @@ async function refreshCountry(code: string, force: boolean): Promise<RefreshResu
     }
 
     const outcome = await summarizeArticles(needsSummary);
-    if (outcome.articles.some((a) => a.titleJa && a.summaryJa)) {
-      await mergeSummaryCache(outcome.articles);
+    const newSummaries: Record<string, SummaryEntry> = {};
+    for (const article of outcome.articles) {
+      if (article.titleJa && article.summaryJa) {
+        newSummaries[article.id] = { titleJa: article.titleJa, summaryJa: article.summaryJa };
+      }
     }
+    await saveSummaries(newSummaries);
 
     const articles = [...alreadySummarized, ...outcome.articles].sort(
       (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
