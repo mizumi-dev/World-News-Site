@@ -90,7 +90,7 @@ export async function summarizeArticles(articles: Article[]): Promise<Article[]>
   }
   const baseUrl =
     process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-  const model = process.env.QWEN_MODEL || "qwen-turbo";
+  const model = process.env.QWEN_MODEL || "qwen3.7-flash";
 
   let results: SummaryResult[] | null = null;
   for (let attempt = 0; attempt < 2 && results === null; attempt++) {

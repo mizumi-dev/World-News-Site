@@ -105,7 +105,7 @@ export const COUNTRIES: Country[] = [
 ### 4.2 AI要約ラッパー（`src/lib/summarize.ts`）
 
 - Qwen（Alibaba Cloud）のOpenAI互換Chat Completions APIを `fetch` で直接呼び出す（追加SDK依存なし。NewsProviderアダプタと同じ設計思想）。エンドポイント: `POST {QWEN_BASE_URL}/chat/completions`（国際版デフォルト: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`。中国本土アカウントは `https://dashscope.aliyuncs.com/compatible-mode/v1`）。認証は `Authorization: Bearer {QWEN_API_KEY}` ヘッダ。
-- モデルは env `QWEN_MODEL` で指定。**デフォルト `qwen-turbo`**（コスト最優先）。精度を上げたい場合はユーザー判断でコンソールで確認した別モデル名に変更できる旨を README に記載する。
+- モデルは env `QWEN_MODEL` で指定。**デフォルト `qwen3.7-flash`**（コスト最優先）。精度を上げたい場合はユーザー判断でコンソールで確認した別モデル名に変更できる旨を README に記載する。
 - リクエストには `response_format: { type: "json_object" }` を指定し、JSON出力を安定させる（OpenAI互換仕様上、配列直返しではなく `{"results": [...]}` 形式のオブジェクトで受け取る）。
 - **1リクエストで1国分（最大10記事）をまとめてバッチ要約**する（記事ごとに1コールしない。コストとレイテンシ削減）。
 - 入力: 記事番号付きの `originalTitle`（+あれば description 冒頭200字）。出力はJSONで受け取る:
@@ -189,7 +189,7 @@ NEWSDATA_API_KEY=                 # https://newsdata.io で取得
 WORLDNEWS_API_KEY=                # https://worldnewsapi.com で取得（worldnewsapi 使用時のみ）
 QWEN_API_KEY=                     # Alibaba Cloud (Qwen) で取得
 QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-QWEN_MODEL=qwen-turbo              # 要約に使うモデル。コスト最優先
+QWEN_MODEL=qwen3.7-flash           # 要約に使うモデル。コスト最優先
 MAX_ARTICLES_PER_COUNTRY=10
 CACHE_TTL_MINUTES=15
 ```
