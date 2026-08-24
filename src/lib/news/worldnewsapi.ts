@@ -48,12 +48,13 @@ export function createWorldNewsApiProvider(country: Country): NewsProvider {
 
       let res: Response;
       try {
-        res = await fetch(url, { cache: "no-store" });
+        res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
       } catch (err) {
-        throw new NewsProviderError(
-          countryCode,
-          `World News API への接続に失敗しました: ${(err as Error).message}`,
-        );
+        const message =
+          err instanceof Error && err.name === "TimeoutError"
+            ? "World News API への接続がタイムアウトしました(20秒)。時間をおいて再試行してください。"
+            : `World News API への接続に失敗しました: ${(err as Error).message}`;
+        throw new NewsProviderError(countryCode, message);
       }
 
       if (!res.ok) {

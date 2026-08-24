@@ -66,6 +66,7 @@ async function requestSummaries(
       ],
       response_format: { type: "json_object" },
     }),
+    signal: AbortSignal.timeout(20_000),
   });
 
   const data = (await res.json()) as QwenChatResponse;
