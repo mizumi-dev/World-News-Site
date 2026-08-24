@@ -203,7 +203,7 @@ CACHE_TTL_MINUTES=15
 ## 7. 将来拡張の設計上の考慮（実装はしない）
 
 - **国の追加**: `countries.ts` に1行追加するだけで動く。200カ国化はプロバイダの国コード対応表の拡充のみ。
-- **cron化**: `POST /api/refresh` を Vercel Cron / GitHub Actions / 任意のスケジューラから叩く。認証が必要になったら `REFRESH_SECRET` env + Bearer 検証を同ルートに足す。
+- **cron化**: 対応済み。`GET /api/cron/refresh`（`vercel.json` の `crons` から起動、全対応国を更新）を `CRON_SECRET` で認証する。Vercelはcron実行時に `Authorization: Bearer {CRON_SECRET}` を自動送信するため、その値と一致するリクエストのみ許可する。Hobbyプランはcronの実行頻度が1日1回までのため、より高頻度にしたい場合はProプランへの変更が必要。
 - **キャッシュ差し替え**: 対応済み（`src/lib/cache/`）。別のストアに変えたい場合は `KeyValueBackend` インターフェースを実装するファイルを追加し、`cache/index.ts` の `getBackend()` に分岐を足すだけでよい。
 
 ## 8. コスト設計と重複記事の扱い（検討中／未実装）
