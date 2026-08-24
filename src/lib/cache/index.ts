@@ -10,8 +10,12 @@ export interface CountryCache {
 
 export type SummaryEntry = Pick<Article, "titleJa" | "summaryJa" | "tag">;
 
-/** 要約は再生成にトークンコストがかかるので長めに保持する。無期限にするとストレージが際限なく増えるため上限を設ける */
-const SUMMARY_TTL_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * 要約の保存コストは再要約コストの約1/300（docs/SPEC.md 8-1）なので、長く保持するほど得になる。
+ * Upstash無料枠（256MB・月50万コマンド）に対して1件あたり約500バイトと十分小さいため、1年間保持する。
+ * 無期限にしないのは、二度と出てこない記事の要約が永久に残り続けるのを避けるため。
+ */
+const SUMMARY_TTL_SECONDS = 365 * 24 * 60 * 60;
 
 function getBackend(): KeyValueBackend {
   const url = process.env.UPSTASH_REDIS_REST_URL;
