@@ -88,14 +88,18 @@ export default function Home() {
         body: JSON.stringify({ countries: selectedCountries }),
       });
       const data = await res.json();
-      const failures = (data.results ?? []).filter(
-        (r: { ok: boolean }) => !r.ok,
-      ) as { code: string; error?: string }[];
-      if (failures.length > 0) {
-        setRefreshErrors(
-          failures.map((f) => ({ code: f.code, error: f.error ?? "更新に失敗しました" })),
-        );
-      }
+      const results = (data.results ?? []) as {
+        code: string;
+        ok: boolean;
+        error?: string;
+        warning?: string;
+      }[];
+      const messages = results.flatMap((r) => {
+        if (!r.ok) return [{ code: r.code, error: r.error ?? "更新に失敗しました" }];
+        if (r.warning) return [{ code: r.code, error: r.warning }];
+        return [];
+      });
+      setRefreshErrors(messages);
       await loadCached(selectedCountries);
     } catch (err) {
       setRefreshErrors([{ code: "", error: err instanceof Error ? err.message : "更新に失敗しました" }]);
