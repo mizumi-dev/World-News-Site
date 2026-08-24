@@ -136,17 +136,34 @@ export async function refreshCountries(codes: string[], force = false): Promise<
 
       // 同じ国内で実質同じ記事（通信社配信等）が複数媒体から取れた場合、
       // 発行時刻が最も早い（一次情報に近い）ものだけを代表として残す
-      const representativeByDedupKey = new Map<string, Article>();
+      const groupsByDedupKey = new Map<string, Article[]>();
       for (const article of withSummary) {
         const dedupKey = dedupKeyByArticleId.get(article.id)!;
-        const existing = representativeByDedupKey.get(dedupKey);
-        if (!existing || new Date(article.publishedAt) < new Date(existing.publishedAt)) {
-          representativeByDedupKey.set(dedupKey, article);
+        const group = groupsByDedupKey.get(dedupKey);
+        if (group) group.push(article);
+        else groupsByDedupKey.set(dedupKey, [article]);
+      }
+
+      // デバッグ用: どの見出しが同一グループに統合されたか可視化する
+      for (const group of groupsByDedupKey.values()) {
+        if (group.length > 1) {
+          console.log(
+            `[dedup] ${state.code}: ${group.length}件を統合 ->`,
+            group.map((a) => a.originalTitle),
+          );
         }
       }
 
-      const articles = [...representativeByDedupKey.values()].sort(
-        (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+      const articles = [...groupsByDedupKey.values()]
+        .map((group) =>
+          group.reduce((earliest, a) =>
+            new Date(a.publishedAt) < new Date(earliest.publishedAt) ? a : earliest,
+          ),
+        )
+        .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+      console.log(
+        `[dedup] ${state.code}: 取得${state.articles.length}件 -> 表示${articles.length}件`,
       );
 
       await setCountryCache(state.code, { articles, fetchedAt: new Date().toISOString() });
