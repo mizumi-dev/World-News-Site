@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { cosineSimilarity } from "@/lib/embeddings";
 
 /**
  * 見出しを比較・キャッシュキー生成用に正規化する（表示には使わない）。
@@ -92,4 +93,48 @@ export function assignDedupKeys<T extends { key: string; title: string }>(
   }
 
   return result;
+}
+
+/**
+ * 段階③（docs/SPEC.md 8-2）: 言い回しが大きく異なる同一ニュースを埋め込みベクトルの類似度で統合する。
+ * 段階①②（assignDedupKeys）で作られた dedupKey のうち、指定した候補ペアの埋め込み同士が
+ * 閾値以上似ていれば同じクラスタとして統合し、統合後の dedupKey マップを返す（Union-Find）。
+ * オプトイン機能（ENABLE_EMBEDDING_DEDUP）で、呼び出し側が埋め込み取得を行い結果を渡す想定。
+ */
+export const EMBEDDING_SIMILARITY_THRESHOLD = 0.88;
+
+export function mergeClustersByEmbedding(
+  dedupKeyByItemKey: Map<string, string>,
+  clusterEmbeddings: Map<string, number[]>,
+  threshold: number = EMBEDDING_SIMILARITY_THRESHOLD,
+): Map<string, string> {
+  const keys = [...clusterEmbeddings.keys()];
+  const parent = new Map(keys.map((k) => [k, k]));
+
+  function find(k: string): string {
+    let root = k;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    return root;
+  }
+  function union(a: string, b: string) {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  }
+
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      const ea = clusterEmbeddings.get(keys[i])!;
+      const eb = clusterEmbeddings.get(keys[j])!;
+      if (cosineSimilarity(ea, eb) >= threshold) {
+        union(keys[i], keys[j]);
+      }
+    }
+  }
+
+  const remapped = new Map<string, string>();
+  for (const [itemKey, dedupKey] of dedupKeyByItemKey) {
+    remapped.set(itemKey, clusterEmbeddings.has(dedupKey) ? find(dedupKey) : dedupKey);
+  }
+  return remapped;
 }

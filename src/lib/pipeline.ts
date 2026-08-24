@@ -1,5 +1,6 @@
 import { getCountry } from "@/lib/config/countries";
-import { assignDedupKeys } from "@/lib/dedup";
+import { assignDedupKeys, mergeClustersByEmbedding } from "@/lib/dedup";
+import { getEmbeddings } from "@/lib/embeddings";
 import { getNewsProvider, NewsProviderError } from "@/lib/news";
 import type { Article } from "@/lib/news/types";
 import { summarizeArticles } from "@/lib/summarize";
@@ -63,6 +64,43 @@ async function fetchCountry(code: string, force: boolean): Promise<CountryState>
 }
 
 /**
+ * 段階③（docs/SPEC.md 8-2）: 埋め込みベクトルで、段階①②が見逃した「言い回しが大きく異なる
+ * 同一ニュース」をさらに統合する。オプトイン（ENABLE_EMBEDDING_DEDUP=true）。
+ * 失敗しても段階①②の結果をそのまま使って処理を続行する（重複判定の追加精度であり必須ではないため）。
+ */
+async function mergeByEmbeddingIfEnabled(
+  dedupKeyByArticleId: Map<string, string>,
+  articles: Article[],
+): Promise<Map<string, string>> {
+  if (process.env.ENABLE_EMBEDDING_DEDUP !== "true" || articles.length === 0) {
+    return dedupKeyByArticleId;
+  }
+
+  const representativeTitleByDedupKey = new Map<string, string>();
+  for (const article of articles) {
+    const dedupKey = dedupKeyByArticleId.get(article.id)!;
+    if (!representativeTitleByDedupKey.has(dedupKey)) {
+      representativeTitleByDedupKey.set(dedupKey, article.originalTitle);
+    }
+  }
+  // クラスタが1つ以下なら統合しようがない
+  if (representativeTitleByDedupKey.size <= 1) return dedupKeyByArticleId;
+
+  try {
+    const keys = [...representativeTitleByDedupKey.keys()];
+    const embeddings = await getEmbeddings(keys.map((k) => representativeTitleByDedupKey.get(k)!));
+    const clusterEmbeddings = new Map(keys.map((k, i) => [k, embeddings[i]]));
+    return mergeClustersByEmbedding(dedupKeyByArticleId, clusterEmbeddings);
+  } catch (err) {
+    console.error(
+      "[dedup] 埋め込みによる重複判定に失敗しました。段階①②の結果のみで続行します:",
+      err instanceof Error ? err.message : err,
+    );
+    return dedupKeyByArticleId;
+  }
+}
+
+/**
  * 国ごとに並列でニュースを取得し、通信社配信などで実質同じ記事（正規化タイトルの一致/類似）は
  * 国をまたいで1回だけ要約する。要約は dedupKey 単位でキャッシュを共有するため、
  * 別の国が既に要約済みの記事は再要約しない。
@@ -73,8 +111,9 @@ export async function refreshCountries(codes: string[], force = false): Promise<
   const toSummarize = countryStates.filter((s) => s.status === "fetched");
   const allFetchedArticles = toSummarize.flatMap((s) => s.articles);
 
-  const dedupKeyByArticleId = assignDedupKeys(
-    allFetchedArticles.map((a) => ({ key: a.id, title: a.originalTitle })),
+  const dedupKeyByArticleId = await mergeByEmbeddingIfEnabled(
+    assignDedupKeys(allFetchedArticles.map((a) => ({ key: a.id, title: a.originalTitle }))),
+    allFetchedArticles,
   );
 
   const uniqueDedupKeys = [...new Set(dedupKeyByArticleId.values())];
