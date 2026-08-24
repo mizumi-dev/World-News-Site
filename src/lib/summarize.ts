@@ -4,8 +4,8 @@ const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の
 (1) 自然な日本語の見出し (titleJa)
 (2) 1〜2文の日本語要約 (summaryJa)。可能なら背景や重要性を一言補足してください。
 原文から推測できない詳細を創作してはいけません。
-出力は次の形式のJSON配列のみとしてください。説明文やコードブロックのマークアップは付けないでください。
-[{"index":0,"titleJa":"...","summaryJa":"..."}]`;
+出力は次の形式のJSONオブジェクトのみとしてください。説明文やコードブロックのマークアップは付けないでください。
+{"results":[{"index":0,"titleJa":"...","summaryJa":"..."}]}`;
 
 interface SummaryResult {
   index: number;
@@ -22,67 +22,80 @@ function buildUserContent(articles: Article[]): string {
     .join("\n\n");
 }
 
-function extractJsonArray(text: string): SummaryResult[] {
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error("応答にJSON配列が見つかりませんでした");
+function extractResults(text: string): SummaryResult[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1 || end < start) {
+      throw new Error("応答にJSONオブジェクトが見つかりませんでした");
+    }
+    parsed = JSON.parse(text.slice(start, end + 1));
   }
-  const parsed = JSON.parse(text.slice(start, end + 1));
-  if (!Array.isArray(parsed)) {
-    throw new Error("応答がJSON配列ではありません");
+  const results = (parsed as { results?: unknown }).results;
+  if (!Array.isArray(results)) {
+    throw new Error("応答にresults配列が含まれていません");
   }
-  return parsed;
+  return results as SummaryResult[];
 }
 
-interface GeminiResponse {
-  candidates?: { content?: { parts?: { text?: string }[] } }[];
+interface QwenChatResponse {
+  choices?: { message?: { content?: string } }[];
   error?: { message?: string };
 }
 
 async function requestSummaries(
   apiKey: string,
+  baseUrl: string,
   model: string,
   articles: Article[],
 ): Promise<SummaryResult[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const res = await fetch(url, {
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: "user", parts: [{ text: buildUserContent(articles) }] }],
-      generationConfig: { responseMimeType: "application/json" },
+      model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: buildUserContent(articles) },
+      ],
+      response_format: { type: "json_object" },
     }),
   });
 
-  const data = (await res.json()) as GeminiResponse;
+  const data = (await res.json()) as QwenChatResponse;
   if (!res.ok) {
-    throw new Error(data.error?.message ?? `Gemini API がエラーを返しました (status ${res.status})`);
+    throw new Error(data.error?.message ?? `Qwen API がエラーを返しました (status ${res.status})`);
   }
 
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
-  return extractJsonArray(text);
+  const text = data.choices?.[0]?.message?.content ?? "";
+  return extractResults(text);
 }
 
 /**
- * 1国分の記事をまとめて1回のAPIコールで要約する。
+ * 1国分の記事をまとめて1回のAPIコールで要約する（Qwen, OpenAI互換エンドポイント）。
  * パース失敗時は1回だけリトライし、それでも失敗したら該当記事は titleJa/summaryJa = null のまま返す。
  */
 export async function summarizeArticles(articles: Article[]): Promise<Article[]> {
   if (articles.length === 0) return articles;
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.QWEN_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY が設定されていません。.env に設定してください。");
+    throw new Error("QWEN_API_KEY が設定されていません。.env に設定してください。");
   }
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const baseUrl =
+    process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+  const model = process.env.QWEN_MODEL || "qwen-turbo";
 
   let results: SummaryResult[] | null = null;
   for (let attempt = 0; attempt < 2 && results === null; attempt++) {
     try {
-      results = await requestSummaries(apiKey, model, articles);
+      results = await requestSummaries(apiKey, baseUrl, model, articles);
     } catch {
       results = null;
     }
