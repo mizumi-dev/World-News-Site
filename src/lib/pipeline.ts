@@ -28,8 +28,12 @@ export interface RefreshResult {
 
 const MAX_ARTICLES_PER_COUNTRY = Number(process.env.MAX_ARTICLES_PER_COUNTRY ?? 10);
 const CACHE_TTL_MINUTES = Number(process.env.CACHE_TTL_MINUTES ?? 15);
-// 1回のQwen呼び出しで要約する記事数の上限（国単位ではなく、重複排除後のユニーク記事単位）
-const SUMMARIZE_CHUNK_SIZE = 10;
+/**
+ * 1回のQwen呼び出しで要約する記事数の上限（国単位ではなく、重複排除後のユニーク記事単位）。
+ * 多言語化(ja/en同時生成)で1記事あたりの出力トークンがほぼ倍になったため、10件のままだと
+ * MAX_OUTPUT_TOKENS(4096)に近づき応答が打ち切られるリスクが上がる。6件に減らして安全マージンを確保する。
+ */
+const SUMMARIZE_CHUNK_SIZE = 6;
 /**
  * 1回のrefreshCountries呼び出しで新規に要約するdedupKeyの上限（ハード上限、安全弁）。
  * フィード側の変化や重複判定の精度低下で新規記事が急増しても、AIコストと実行時間が
@@ -45,8 +49,13 @@ const MAX_NEW_SUMMARIES_PER_RUN = Number(process.env.MAX_NEW_SUMMARIES_PER_RUN ?
  * 自動的に「今回どこまで処理できるか」が決まり、翻訳の滞留（未翻訳記事の蓄積）が
  * 自己解消しやすくなる。SUMMARIZE_CHUNK_SIZE件ずつの「波」で処理し、次の波を開始する前に
  * 予算を超えていないか確認する（既に開始した波は最後まで待つ）。
+ *
+ * 予算を使い切ってから次の波を開始しない、というだけでは不十分な点に注意: 1つの波自体が
+ * 最悪ケースで REQUEST_TIMEOUT_MS(summarize.ts) × 2回リトライ 程度かかりうるため、
+ * Vercelの実行時間上限(60秒)に対して十分な余白を残す必要がある
+ * （実際に多言語化直後、40秒設定でFUNCTION_INVOCATION_TIMEOUTが発生した）。
  */
-const SUMMARIZE_TIME_BUDGET_MS = Number(process.env.SUMMARIZE_TIME_BUDGET_MS ?? 40_000);
+const SUMMARIZE_TIME_BUDGET_MS = Number(process.env.SUMMARIZE_TIME_BUDGET_MS ?? 25_000);
 // 1波あたりの並列Qwen呼び出し数
 const SUMMARIZE_WAVE_SIZE = 20;
 /**

@@ -16,7 +16,10 @@ const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。各記事
 {"results":[{"index":0,"titleJa":"...","summaryJa":"...","titleEn":"...","summaryEn":"...","tag":"..."}]}`;
 
 const MAX_OUTPUT_TOKENS = 4096;
-const REQUEST_TIMEOUT_MS = 30_000;
+// attemptBatch は最大2回リトライするため、1バッチの最悪ケースはこの2倍かかりうる。
+// Vercelの実行時間上限(60秒)に対して十分な余白を残すため、30秒から20秒に短縮した
+// （pipeline.ts の SUMMARIZE_TIME_BUDGET_MS も参照）。
+const REQUEST_TIMEOUT_MS = 20_000;
 
 interface SummaryResult {
   index: number;
