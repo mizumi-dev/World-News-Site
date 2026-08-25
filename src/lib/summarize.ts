@@ -108,9 +108,98 @@ async function requestSummaries(
   return extractResults(choice?.message?.content ?? "");
 }
 
+/** Qwenのコンテンツ安全フィルタによる拒否。同じ内容を送る限り何度リトライしても必ず同じ結果になる */
+const CONTENT_POLICY_ERROR_PATTERN = /DataInspectionFailed/i;
+
+async function attemptBatch(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  articles: Article[],
+): Promise<{ results: SummaryResult[] | null; error: string }> {
+  let lastError = "不明なエラー";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const results = await requestSummaries(apiKey, baseUrl, model, articles);
+      return { results, error: "" };
+    } catch (err) {
+      lastError =
+        err instanceof Error
+          ? err.name === "TimeoutError"
+            ? `応答がタイムアウトしました(${REQUEST_TIMEOUT_MS / 1000}秒)`
+            : err.message
+          : String(err);
+      console.error(
+        `[summarize] Qwen API呼び出しに失敗しました (試行${attempt + 1}/2, model=${model}, ${articles.length}件):`,
+        lastError,
+      );
+    }
+  }
+  return { results: null, error: lastError };
+}
+
+function mergeResults(articles: Article[], results: SummaryResult[]): Article[] {
+  const byIndex = new Map(results.map((r) => [r.index, r]));
+  return articles.map((article, i) => {
+    const result = byIndex.get(i);
+    if (!result) return article;
+    // フィード由来のタグ(article.tag)があれば優先する。無ければAIの推測を使う
+    const tag = article.tag ?? (result.tag && TAG_IDS.includes(result.tag) ? result.tag : "other");
+    return { ...article, titleJa: result.titleJa, summaryJa: result.summaryJa, tag };
+  });
+}
+
+async function summarizeChunk(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  articles: Article[],
+): Promise<SummarizeOutcome> {
+  const { results, error } = await attemptBatch(apiKey, baseUrl, model, articles);
+  if (results !== null) {
+    return { articles: mergeResults(articles, results) };
+  }
+
+  if (articles.length === 1) {
+    if (CONTENT_POLICY_ERROR_PATTERN.test(error)) {
+      // Qwenのコンテンツフィルタに永続的に拒否される記事。同じ内容なので次回実行しても
+      // 必ず同じ結果になり、放置すると毎回無駄にAPIを消費し続ける。原文タイトルをそのまま
+      // 採用してキャッシュを埋め、二度とAIに送らないようにする。
+      const article = articles[0];
+      console.warn(
+        `[summarize] コンテンツフィルタにより要約を生成できませんでした。原文タイトルで代替します: ${article.originalTitle}`,
+      );
+      return {
+        articles: [
+          {
+            ...article,
+            titleJa: article.originalTitle,
+            summaryJa: "(AIによる要約は生成できませんでした)",
+            tag: article.tag ?? "other",
+          },
+        ],
+      };
+    }
+    return { articles, error };
+  }
+
+  // 複数件をまとめて送って失敗した場合、原因の記事を切り分ける。コンテンツフィルタは
+  // バッチ中の1件が原因でも全体を巻き込むため、半分に割って再送すれば残りは要約できる。
+  const mid = Math.ceil(articles.length / 2);
+  const [first, second] = await Promise.all([
+    summarizeChunk(apiKey, baseUrl, model, articles.slice(0, mid)),
+    summarizeChunk(apiKey, baseUrl, model, articles.slice(mid)),
+  ]);
+  return {
+    articles: [...first.articles, ...second.articles],
+    error: first.error ?? second.error,
+  };
+}
+
 /**
- * 1国分の記事をまとめて1回のAPIコールで要約する（Qwen, OpenAI互換エンドポイント）。
- * 失敗時は1回だけリトライし、それでも失敗したら要約なしの記事と失敗理由を返す。
+ * 記事をまとめてAPIコールで要約する（Qwen, OpenAI互換エンドポイント）。
+ * バッチ全体が失敗した場合は半分に割って再送し、原因の記事を切り分ける
+ * （コンテンツフィルタは1件の問題記事でバッチ全体を巻き込むため）。
  */
 export async function summarizeArticles(articles: Article[]): Promise<SummarizeOutcome> {
   if (articles.length === 0) return { articles };
@@ -123,38 +212,5 @@ export async function summarizeArticles(articles: Article[]): Promise<SummarizeO
     process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
   const model = process.env.QWEN_MODEL || "qwen3.7-flash";
 
-  let results: SummaryResult[] | null = null;
-  let lastError = "不明なエラー";
-  for (let attempt = 0; attempt < 2 && results === null; attempt++) {
-    try {
-      results = await requestSummaries(apiKey, baseUrl, model, articles);
-    } catch (err) {
-      lastError =
-        err instanceof Error
-          ? err.name === "TimeoutError"
-            ? `応答がタイムアウトしました(${REQUEST_TIMEOUT_MS / 1000}秒)`
-            : err.message
-          : String(err);
-      console.error(
-        `[summarize] Qwen API呼び出しに失敗しました (試行${attempt + 1}/2, model=${model}):`,
-        lastError,
-      );
-      results = null;
-    }
-  }
-
-  if (results === null) {
-    return { articles, error: lastError };
-  }
-
-  const byIndex = new Map(results.map((r) => [r.index, r]));
-  return {
-    articles: articles.map((article, i) => {
-      const result = byIndex.get(i);
-      if (!result) return article;
-      // フィード由来のタグ(article.tag)があれば優先する。無ければAIの推測を使う
-      const tag = article.tag ?? (result.tag && TAG_IDS.includes(result.tag) ? result.tag : "other");
-      return { ...article, titleJa: result.titleJa, summaryJa: result.summaryJa, tag };
-    }),
-  };
+  return summarizeChunk(apiKey, baseUrl, model, articles);
 }
