@@ -8,14 +8,18 @@ export interface CountryCache {
   fetchedAt: string;
 }
 
-export type SummaryEntry = Pick<Article, "titleJa" | "summaryJa" | "tag">;
+export type SummaryEntry = Pick<
+  Article,
+  "titleJa" | "summaryJa" | "titleEn" | "summaryEn" | "tag"
+>;
 
 /**
- * 要約の保存コストは再要約コストの約1/300（docs/SPEC.md 8-1）なので、長く保持するほど得になる。
- * Upstash無料枠（256MB・月50万コマンド）に対して1件あたり約500バイトと十分小さいため、1年間保持する。
- * 無期限にしないのは、二度と出てこない記事の要約が永久に残り続けるのを避けるため。
+ * トピック別フィード導入で取得量が15倍化し、多言語化(ja/en同時保存)で1件あたりの容量も増えたため、
+ * 1年保持だとUpstash無料枠(256MB)を数ヶ月で使い切る計算になった。上限に達すると書き込みがブロックされ、
+ * サイト全体の更新が止まってしまうため、保持期間を7日に短縮する。
+ * 「過去記事の横断検索」は現状スコープ外（将来、専用ストレージを足すタイミングで別途対応）。
  */
-const SUMMARY_TTL_SECONDS = 365 * 24 * 60 * 60;
+const SUMMARY_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 function getBackend(): KeyValueBackend {
   const url = process.env.UPSTASH_REDIS_REST_URL;

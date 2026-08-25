@@ -108,6 +108,8 @@ async function fetchFeed(
         originalTitle: title,
         titleJa: null,
         summaryJa: null,
+        titleEn: null,
+        summaryEn: null,
         // トピック別フィード由来なら、フィードの分類をそのままタグとして確定させる
         // （AIにタグを推測させない。src/lib/summarize.ts 参照）
         tag: tag ?? null,

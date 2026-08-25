@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCountry } from "@/lib/config/countries";
 import { CountrySelector } from "@/components/CountrySelector";
 import { LayoutToggle, type LayoutMode } from "@/components/LayoutToggle";
+import { LanguageToggle, type DisplayLanguage } from "@/components/LanguageToggle";
 import { NewspaperLayout } from "@/components/NewspaperLayout";
 import { MatomeLayout } from "@/components/MatomeLayout";
 import { TagFilter } from "@/components/TagFilter";
@@ -18,6 +19,7 @@ interface StoredSettings {
   layout: LayoutMode;
   sectionOverrides: Record<number, string>;
   selectedTags: string[];
+  language: DisplayLanguage;
 }
 
 export default function Home() {
@@ -25,6 +27,7 @@ export default function Home() {
   const [selectedCountries, setSelectedCountries] = useState<string[]>(DEFAULT_COUNTRIES);
   const [layout, setLayout] = useState<LayoutMode>("newspaper");
   const [sectionOverrides, setSectionOverrides] = useState<Record<number, string>>({});
+  const [language, setLanguage] = useState<DisplayLanguage>("ja");
 
   const [newsData, setNewsData] = useState<CountryNewsMap>({});
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -41,6 +44,7 @@ export default function Home() {
           if (parsed.layout) setLayout(parsed.layout);
           if (parsed.sectionOverrides) setSectionOverrides(parsed.sectionOverrides);
           if (parsed.selectedTags) setSelectedTags(parsed.selectedTags);
+          if (parsed.language) setLanguage(parsed.language);
         }
       } catch {
         // 壊れた設定は無視してデフォルトのまま続行する
@@ -53,9 +57,15 @@ export default function Home() {
   // 検索キーワード(searchQuery)は一時的な操作なので保存対象に含めない。
   useEffect(() => {
     if (!hydrated) return;
-    const settings: StoredSettings = { selectedCountries, layout, sectionOverrides, selectedTags };
+    const settings: StoredSettings = {
+      selectedCountries,
+      layout,
+      sectionOverrides,
+      selectedTags,
+      language,
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  }, [hydrated, selectedCountries, layout, sectionOverrides, selectedTags]);
+  }, [hydrated, selectedCountries, layout, sectionOverrides, selectedTags, language]);
 
   // 国ごとに独立したパス(/api/news/{code})を叩く。クエリパラメータを使わないため
   // Next.jsがISRで静的キャッシュでき、閲覧のたびにサーバー関数やRedisを読みに行かずに済む。
@@ -97,7 +107,17 @@ export default function Home() {
             return false;
           }
           if (query === "") return true;
-          const haystack = `${article.titleJa ?? ""} ${article.summaryJa ?? ""} ${article.originalTitle}`.toLowerCase();
+          // 表示言語に関わらず、日本語・英語どちらのキーワードでもヒットするようにする
+          const haystack = [
+            article.titleJa,
+            article.summaryJa,
+            article.titleEn,
+            article.summaryEn,
+            article.originalTitle,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
           return haystack.includes(query);
         }),
       },
@@ -122,6 +142,7 @@ export default function Home() {
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h1 className="text-xl font-bold">世界ニュースまとめ（プロトタイプ）</h1>
           <div className="flex items-center gap-2 shrink-0">
+            <LanguageToggle language={language} onChange={setLanguage} />
             <LayoutToggle layout={layout} onChange={setLayout} />
           </div>
         </div>
@@ -165,9 +186,10 @@ export default function Home() {
             onSectionOverrideChange={(slotIndex, code) =>
               setSectionOverrides((prev) => ({ ...prev, [slotIndex]: code }))
             }
+            language={language}
           />
         ) : (
-          <MatomeLayout countries={selectedCountryObjects} newsData={filteredNewsData} />
+          <MatomeLayout countries={selectedCountryObjects} newsData={filteredNewsData} language={language} />
         ))}
     </div>
   );

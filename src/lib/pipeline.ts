@@ -240,6 +240,8 @@ export async function refreshCountries(codes: string[], force = false): Promise<
             newSummaries[dedupKey] = {
               titleJa: resultArticle.titleJa,
               summaryJa: resultArticle.summaryJa,
+              titleEn: resultArticle.titleEn,
+              summaryEn: resultArticle.summaryEn,
               tag: resultArticle.tag,
             };
           }

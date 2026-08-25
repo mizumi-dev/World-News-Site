@@ -89,6 +89,8 @@ export function createNewsDataProvider(country: Country): NewsProvider {
           originalTitle: r.title!,
           titleJa: null,
           summaryJa: null,
+          titleEn: null,
+          summaryEn: null,
           tag: null,
           sourceName: r.source_name ?? r.source_id ?? country.nameJa,
           url: r.link!,

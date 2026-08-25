@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { COUNTRIES, type Country } from "@/lib/config/countries";
 import { TagBadge } from "@/components/TagBadge";
+import type { DisplayLanguage } from "@/components/LanguageToggle";
+import { pickDisplayText } from "@/lib/news/display";
 import type { CountryNewsMap } from "@/types";
 
 type SlotSize = "large" | "medium" | "small";
@@ -123,11 +125,13 @@ export function NewspaperLayout({
   newsData,
   sectionOverrides,
   onSectionOverrideChange,
+  language,
 }: {
   countries: Country[];
   newsData: CountryNewsMap;
   sectionOverrides: Record<number, string>;
   onSectionOverrideChange: (slotIndex: number, code: string) => void;
+  language: DisplayLanguage;
 }) {
   const slots = getSlots(countries.length);
   // スロットごとの表示件数。未操作のスロットは initialCountFor の既定値を使う
@@ -161,6 +165,7 @@ export function NewspaperLayout({
                 <div className="flex flex-col gap-3">
                   {articles.map((article, articleIndex) => {
                     const isLead = articleIndex === 0;
+                    const { title, summary } = pickDisplayText(article, language);
                     return (
                       <article
                         key={article.id}
@@ -178,10 +183,10 @@ export function NewspaperLayout({
                             rel="noopener noreferrer"
                             className="hover:underline"
                           >
-                            {article.titleJa ?? article.originalTitle}
+                            {title}
                           </a>
                         </h3>
-                        {article.summaryJa && (
+                        {summary && (
                           <p
                             className={
                               isLead
@@ -189,7 +194,7 @@ export function NewspaperLayout({
                                 : "text-xs text-black/60 dark:text-white/60 line-clamp-2"
                             }
                           >
-                            {article.summaryJa}
+                            {summary}
                           </p>
                         )}
                         <p className="text-[11px] text-black/40 dark:text-white/40">

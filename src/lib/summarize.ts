@@ -5,14 +5,15 @@ const TAG_IDS = TAGS.map((t) => t.id);
 
 // tagはフィード側で既に確定している記事があるため、AIには「未確定のものだけ」推測させる。
 // index行に "(タグ確定済み)" と付いている記事は tag を省略してよい（省略時は既存タグを保持する）。
-const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。日本の読者向けに、各記事について次を作成してください。
-(1) 自然な日本語の見出し (titleJa)
-(2) 1〜2文の日本語要約 (summaryJa)。可能なら背景や重要性を一言補足してください。
+const SYSTEM_PROMPT = `あなたは国際ニュース編集者です。各記事について、日本語版と英語版の両方を作成してください。
+(1) 自然な日本語の見出し (titleJa) と、1〜2文の日本語要約 (summaryJa)。可能なら背景や重要性を一言補足する
+(2) 自然な英語の見出し (titleEn) と、1〜2文の英語要約 (summaryEn)。日本語版の単なる直訳ではなく、
+    英語ニュース読者にとって自然な言い回しにする
 (3) 記事に最もふさわしいタグを1つ (tag)。次の中から必ず1つ選ぶこと: ${TAG_IDS.join(", ")}
   ただし「(タグ確定済み)」と付記された記事は tag を出力しなくてよい（省略可）。
 原文から推測できない詳細を創作してはいけません。
 出力は次の形式のJSONオブジェクトのみとしてください。説明文やコードブロックのマークアップは付けないでください。
-{"results":[{"index":0,"titleJa":"...","summaryJa":"...","tag":"..."}]}`;
+{"results":[{"index":0,"titleJa":"...","summaryJa":"...","titleEn":"...","summaryEn":"...","tag":"..."}]}`;
 
 const MAX_OUTPUT_TOKENS = 4096;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -21,6 +22,8 @@ interface SummaryResult {
   index: number;
   titleJa: string;
   summaryJa: string;
+  titleEn: string;
+  summaryEn: string;
   tag?: string;
 }
 
@@ -145,7 +148,14 @@ function mergeResults(articles: Article[], results: SummaryResult[]): Article[] 
     if (!result) return article;
     // フィード由来のタグ(article.tag)があれば優先する。無ければAIの推測を使う
     const tag = article.tag ?? (result.tag && TAG_IDS.includes(result.tag) ? result.tag : "other");
-    return { ...article, titleJa: result.titleJa, summaryJa: result.summaryJa, tag };
+    return {
+      ...article,
+      titleJa: result.titleJa,
+      summaryJa: result.summaryJa,
+      titleEn: result.titleEn,
+      summaryEn: result.summaryEn,
+      tag,
+    };
   });
 }
 
@@ -175,6 +185,8 @@ async function summarizeChunk(
             ...article,
             titleJa: article.originalTitle,
             summaryJa: "(AIによる要約は生成できませんでした)",
+            titleEn: article.originalTitle,
+            summaryEn: "(AI summary unavailable)",
             tag: article.tag ?? "other",
           },
         ],

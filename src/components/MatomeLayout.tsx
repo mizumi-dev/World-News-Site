@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { Country } from "@/lib/config/countries";
 import { TagBadge } from "@/components/TagBadge";
+import type { DisplayLanguage } from "@/components/LanguageToggle";
+import { pickDisplayText } from "@/lib/news/display";
 import type { CountryNewsMap } from "@/types";
 
 /** 1カ国あたりの初期表示件数と「もっと見る」の増分。1国150件を一度に出すと読めないため */
@@ -25,9 +27,11 @@ function Chevron({ open }: { open: boolean }) {
 export function MatomeLayout({
   countries,
   newsData,
+  language,
 }: {
   countries: Country[];
   newsData: CountryNewsMap;
+  language: DisplayLanguage;
 }) {
   // 明示的に開閉した国だけを保持する。未操作の国は「先頭の国だけ開く」を既定とする
   // （全部開くと大量の記事が一度に並び、まとめ型が読めなくなるため）
@@ -78,28 +82,31 @@ export function MatomeLayout({
                       まだニュースがありません。
                     </p>
                   )}
-                  {articles.map((article, i) => (
-                    <div key={article.id} className="px-4 py-3 flex flex-col gap-1">
-                      <p className="text-sm flex items-center gap-1.5 flex-wrap">
-                        <span className="text-black/40 dark:text-white/40 mr-1">&gt;&gt;{i + 1}</span>
-                        <TagBadge tagId={article.tag} />
-                        <a
-                          href={article.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-bold hover:underline"
-                        >
-                          {article.titleJa ?? article.originalTitle}
-                        </a>
-                      </p>
-                      {article.summaryJa && (
-                        <p className="text-sm text-black/70 dark:text-white/70 bg-black/[0.03] dark:bg-white/[0.05] rounded px-2 py-1.5">
-                          {article.summaryJa}
+                  {articles.map((article, i) => {
+                    const { title, summary } = pickDisplayText(article, language);
+                    return (
+                      <div key={article.id} className="px-4 py-3 flex flex-col gap-1">
+                        <p className="text-sm flex items-center gap-1.5 flex-wrap">
+                          <span className="text-black/40 dark:text-white/40 mr-1">&gt;&gt;{i + 1}</span>
+                          <TagBadge tagId={article.tag} />
+                          <a
+                            href={article.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-bold hover:underline"
+                          >
+                            {title}
+                          </a>
                         </p>
-                      )}
-                      <p className="text-xs text-black/40 dark:text-white/40">{article.sourceName}</p>
-                    </div>
-                  ))}
+                        {summary && (
+                          <p className="text-sm text-black/70 dark:text-white/70 bg-black/[0.03] dark:bg-white/[0.05] rounded px-2 py-1.5">
+                            {summary}
+                          </p>
+                        )}
+                        <p className="text-xs text-black/40 dark:text-white/40">{article.sourceName}</p>
+                      </div>
+                    );
+                  })}
                 </div>
                 {remaining > 0 && (
                   <button
