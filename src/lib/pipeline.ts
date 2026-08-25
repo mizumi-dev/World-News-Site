@@ -1,7 +1,7 @@
 import { getCountry } from "@/lib/config/countries";
 import { assignDedupKeys, mergeClustersByEmbedding } from "@/lib/dedup";
 import { getEmbeddings } from "@/lib/embeddings";
-import { getNewsProvider, NewsProviderError } from "@/lib/news";
+import { getFallbackNewsProvider, getNewsProvider, NewsProviderError } from "@/lib/news";
 import type { Article } from "@/lib/news/types";
 import { summarizeArticles } from "@/lib/summarize";
 import {
@@ -31,16 +31,30 @@ const CACHE_TTL_MINUTES = Number(process.env.CACHE_TTL_MINUTES ?? 15);
 // 1回のQwen呼び出しで要約する記事数の上限（国単位ではなく、重複排除後のユニーク記事単位）
 const SUMMARIZE_CHUNK_SIZE = 10;
 /**
- * 1回のrefreshCountries呼び出しで新規に要約するdedupKeyの上限。
- * 目的は2つある。
- * (1) AIコストの安全弁。フィード側の変化や重複判定の精度低下で新規記事が急増しても青天井にしない。
- * (2) 実行時間の制御。要約は SUMMARIZE_CHUNK_SIZE 件ずつ並列で投げるため、上限が大きいほど
- *     同時リクエスト数が増え、Vercelの実行時間上限(60秒)を超えるリスクが上がる。
- *     150件 = 15並列程度に抑えている。
- * 上限を超えた分は要約なしのまま返り、次回の実行で改めて対象になる（要約は1年キャッシュされるので
- * 数回の実行で自然に埋まる）。これは異常ではないので、エラーとしては報告しない。
+ * 1回のrefreshCountries呼び出しで新規に要約するdedupKeyの上限（ハード上限、安全弁）。
+ * フィード側の変化や重複判定の精度低下で新規記事が急増しても、AIコストと実行時間が
+ * 青天井にならないようにする最終防衛ライン。通常はこれより先に SUMMARIZE_TIME_BUDGET_MS の
+ * 時間予算の方で先に打ち切られる（下記 summarizeRepresentatives 参照）。
  */
-const MAX_NEW_SUMMARIES_PER_RUN = Number(process.env.MAX_NEW_SUMMARIES_PER_RUN ?? 150);
+const MAX_NEW_SUMMARIES_PER_RUN = Number(process.env.MAX_NEW_SUMMARIES_PER_RUN ?? 600);
+/**
+ * 新規要約に使ってよい実行時間の目安(ミリ秒)。Vercelの実行時間上限(60秒)より十分短く取り、
+ * 応答の取りまとめや他国の処理に余裕を残す。
+ * 固定の「1回あたり◯件まで」という件数上限だと、Qwen側の応答速度が速い日は余力を無駄にし、
+ * 遅い日はタイムアウトの危険がある。時間予算にすることで、実際のスループットに応じて
+ * 自動的に「今回どこまで処理できるか」が決まり、翻訳の滞留（未翻訳記事の蓄積）が
+ * 自己解消しやすくなる。SUMMARIZE_CHUNK_SIZE件ずつの「波」で処理し、次の波を開始する前に
+ * 予算を超えていないか確認する（既に開始した波は最後まで待つ）。
+ */
+const SUMMARIZE_TIME_BUDGET_MS = Number(process.env.SUMMARIZE_TIME_BUDGET_MS ?? 40_000);
+// 1波あたりの並列Qwen呼び出し数
+const SUMMARIZE_WAVE_SIZE = 20;
+/**
+ * ニュース取得結果がこの件数未満だった場合、フォールバックプロバイダ(NewsData.io)でも
+ * 取得を試み、より多く取れた方を採用する。取得元フィードの一時的な不調で
+ * 「その国だけ記事がほぼ無い」状態が固定化するのを防ぐための自己修復。
+ */
+const MIN_ARTICLES_BEFORE_FALLBACK = 15;
 
 type CountryState =
   | { code: string; status: "invalid" }
@@ -63,19 +77,49 @@ async function fetchCountry(code: string, force: boolean): Promise<CountryState>
     }
   }
 
+  let articles: Article[] = [];
+  let primaryError: string | undefined;
   try {
     const provider = getNewsProvider(country);
-    const articles = await provider.fetchTopHeadlines(code, MAX_ARTICLES_PER_COUNTRY);
-    return { code, status: "fetched", articles };
+    articles = await provider.fetchTopHeadlines(code, MAX_ARTICLES_PER_COUNTRY);
   } catch (err) {
-    const message =
+    primaryError =
       err instanceof NewsProviderError
         ? err.message
         : err instanceof Error
           ? err.message
           : "不明なエラーが発生しました";
-    return { code, status: "error", error: message };
   }
+
+  // 主プロバイダが失敗した、または記事数が極端に少なかった場合はフォールバックを試す。
+  // 「特定の国だけ記事がほぼ無い」状態を、次回の巡回を待たずその場で自己修復するための処理。
+  if (primaryError !== undefined || articles.length < MIN_ARTICLES_BEFORE_FALLBACK) {
+    const fallback = getFallbackNewsProvider(country);
+    if (fallback) {
+      try {
+        const fallbackArticles = await fallback.fetchTopHeadlines(code, MAX_ARTICLES_PER_COUNTRY);
+        if (fallbackArticles.length > articles.length) {
+          console.log(
+            primaryError
+              ? `[fetch] ${code}: 主プロバイダが失敗(${primaryError})したため、フォールバックで${fallbackArticles.length}件取得`
+              : `[fetch] ${code}: 主プロバイダが${articles.length}件しか返さなかったため、フォールバックで${fallbackArticles.length}件取得`,
+          );
+          articles = fallbackArticles;
+          primaryError = undefined;
+        }
+      } catch (fallbackErr) {
+        console.warn(
+          `[fetch] ${code}: フォールバックプロバイダも失敗しました:`,
+          fallbackErr instanceof Error ? fallbackErr.message : fallbackErr,
+        );
+      }
+    }
+  }
+
+  if (primaryError !== undefined) {
+    return { code, status: "error", error: primaryError };
+  }
+  return { code, status: "fetched", articles };
 }
 
 /**
@@ -160,39 +204,62 @@ export async function refreshCountries(codes: string[], force = false): Promise<
     }
   }
   const allRepresentatives = [...representativeByDedupKey.entries()];
+  // ハード上限（安全弁）。通常はこれより先に時間予算の方で打ち切られる
   const representatives = allRepresentatives.slice(0, MAX_NEW_SUMMARIES_PER_RUN);
-  // 上限で今回見送った件数。これは異常ではなく、次回実行で要約される（要約は1年キャッシュされる）
-  const deferredCount = allRepresentatives.length - representatives.length;
-  if (deferredCount > 0) {
-    console.log(
-      `[summarize] 新規要約の上限(${MAX_NEW_SUMMARIES_PER_RUN}件)に達したため、${deferredCount}件を次回に持ち越します`,
-    );
-  }
+  const capDeferredCount = allRepresentatives.length - representatives.length;
 
-  const newSummaries: Record<string, SummaryEntry> = {};
-  let summarizeError: string | undefined;
   const chunks: [string, Article][][] = [];
   for (let i = 0; i < representatives.length; i += SUMMARIZE_CHUNK_SIZE) {
     chunks.push(representatives.slice(i, i + SUMMARIZE_CHUNK_SIZE));
   }
-  await Promise.all(
-    chunks.map(async (chunk) => {
-      const outcome = await summarizeArticles(chunk.map(([, article]) => article));
-      if (outcome.error) summarizeError = outcome.error;
-      outcome.articles.forEach((resultArticle, i) => {
-        if (resultArticle.titleJa && resultArticle.summaryJa) {
-          const [dedupKey] = chunk[i];
-          newSummaries[dedupKey] = {
-            titleJa: resultArticle.titleJa,
-            summaryJa: resultArticle.summaryJa,
-            tag: resultArticle.tag,
-          };
-        }
-      });
-    }),
-  );
+
+  const newSummaries: Record<string, SummaryEntry> = {};
+  let summarizeError: string | undefined;
+  let attemptedCount = 0;
+  let timeBudgetExceeded = false;
+  const startedAt = Date.now();
+
+  // SUMMARIZE_CHUNK_SIZE件ずつのチャンクを、SUMMARIZE_WAVE_SIZE個まとめた「波」単位で処理する。
+  // 波を始める前に時間予算を確認することで、実際のQwenの応答速度に応じて
+  // 「今回どこまでできるか」が自動的に決まる（固定の件数上限だと、速い日は余力を無駄にし、
+  // 遅い日はタイムアウトの危険がある）。既に始めた波は最後まで待つ。
+  for (let i = 0; i < chunks.length; i += SUMMARIZE_WAVE_SIZE) {
+    if (Date.now() - startedAt > SUMMARIZE_TIME_BUDGET_MS) {
+      timeBudgetExceeded = true;
+      break;
+    }
+    const wave = chunks.slice(i, i + SUMMARIZE_WAVE_SIZE);
+    attemptedCount += wave.reduce((sum, chunk) => sum + chunk.length, 0);
+    await Promise.all(
+      wave.map(async (chunk) => {
+        const outcome = await summarizeArticles(chunk.map(([, article]) => article));
+        if (outcome.error) summarizeError = outcome.error;
+        outcome.articles.forEach((resultArticle, j) => {
+          if (resultArticle.titleJa && resultArticle.summaryJa) {
+            const [dedupKey] = chunk[j];
+            newSummaries[dedupKey] = {
+              titleJa: resultArticle.titleJa,
+              summaryJa: resultArticle.summaryJa,
+              tag: resultArticle.tag,
+            };
+          }
+        });
+      }),
+    );
+  }
   if (Object.keys(newSummaries).length > 0) {
     await saveSummaries(newSummaries);
+  }
+
+  // 「次回に持ち越す」件数 = 上限カットで最初から手を付けなかった分 + 時間予算切れで手を付けられなかった分
+  const timeBudgetDeferredCount = representatives.length - attemptedCount;
+  const deferredCount = capDeferredCount + timeBudgetDeferredCount;
+  if (deferredCount > 0) {
+    console.log(
+      timeBudgetExceeded
+        ? `[summarize] 時間予算(${SUMMARIZE_TIME_BUDGET_MS}ms)に達したため、${deferredCount}件を次回に持ち越します`
+        : `[summarize] 新規要約の上限(${MAX_NEW_SUMMARIES_PER_RUN}件)に達したため、${deferredCount}件を次回に持ち越します`,
+    );
   }
 
   const allSummaries = { ...cachedSummaries, ...newSummaries };
@@ -258,7 +325,9 @@ export async function refreshCountries(codes: string[], force = false): Promise<
         if (summarizeError) {
           warning = `AI要約に失敗しました: ${summarizeError}`;
         } else if (deferredCount > 0) {
-          warning = `新規要約の上限(${MAX_NEW_SUMMARIES_PER_RUN}件/回)に達したため、${pending}件は次回の実行で要約されます`;
+          warning = timeBudgetExceeded
+            ? `1回の実行時間予算を使い切ったため、${pending}件は次回の実行で要約されます`
+            : `新規要約の上限(${MAX_NEW_SUMMARIES_PER_RUN}件/回)に達したため、${pending}件は次回の実行で要約されます`;
         } else {
           warning = `${pending}件の要約が生成されませんでした（AI応答に該当記事が含まれていない可能性があります）`;
         }

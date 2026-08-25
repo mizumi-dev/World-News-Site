@@ -17,6 +17,7 @@ interface StoredSettings {
   selectedCountries: string[];
   layout: LayoutMode;
   sectionOverrides: Record<number, string>;
+  selectedTags: string[];
 }
 
 export default function Home() {
@@ -39,6 +40,7 @@ export default function Home() {
           if (parsed.selectedCountries?.length) setSelectedCountries(parsed.selectedCountries);
           if (parsed.layout) setLayout(parsed.layout);
           if (parsed.sectionOverrides) setSectionOverrides(parsed.sectionOverrides);
+          if (parsed.selectedTags) setSelectedTags(parsed.selectedTags);
         }
       } catch {
         // 壊れた設定は無視してデフォルトのまま続行する
@@ -47,12 +49,13 @@ export default function Home() {
     });
   }, []);
 
-  // 設定が変わるたびに localStorage へ保存する（初回復元より後のみ）
+  // 設定が変わるたびに localStorage へ保存する（初回復元より後のみ）。
+  // 検索キーワード(searchQuery)は一時的な操作なので保存対象に含めない。
   useEffect(() => {
     if (!hydrated) return;
-    const settings: StoredSettings = { selectedCountries, layout, sectionOverrides };
+    const settings: StoredSettings = { selectedCountries, layout, sectionOverrides, selectedTags };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  }, [hydrated, selectedCountries, layout, sectionOverrides]);
+  }, [hydrated, selectedCountries, layout, sectionOverrides, selectedTags]);
 
   // 国ごとに独立したパス(/api/news/{code})を叩く。クエリパラメータを使わないため
   // Next.jsがISRで静的キャッシュでき、閲覧のたびにサーバー関数やRedisを読みに行かずに済む。

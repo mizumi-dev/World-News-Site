@@ -148,6 +148,27 @@ RSS化して取得件数が増えるほど重要になる。
 公開時に残る論点は主にVercel Hobbyプランの商用利用規約とGoogle News RSSの非公式性であり、
 コスト効率そのものではない。
 
+## 追記2: 未翻訳記事の滞留と記事が少ない国への自己修復（2026-08-25）
+
+実データ（GitHub Actions実行ログの`stats`）を確認したところ、`MAX_NEW_SUMMARIES_PER_RUN=150`の
+固定件数上限が、実際のスループットに対して低すぎることが判明した。1回の実行で新規要約を
+150件処理しても実測15〜20秒しかかかっておらず（実行時間上限60秒に対して大きな余裕がある）、
+一方で1シャード(3カ国)あたり最大450件のユニーク記事が発生しうるため、`deferred`（次回持ち越し）が
+毎回100〜200件規模で積み上がり続けていた。これが「特定の言語の記事が翻訳されないまま残る」
+という症状の実体だった。
+
+対応: 固定件数の上限を「時間予算」に変更した（`src/lib/pipeline.ts`）。
+`SUMMARIZE_TIME_BUDGET_MS`（既定40秒）を使い切るまで、`SUMMARIZE_WAVE_SIZE`件のチャンクを
+「波」単位で処理し続ける。実際のQwenの応答速度に応じて1回に処理できる件数が自動的に決まるため、
+遅い日にタイムアウトする心配をせずに、速い日の余力を無駄にしない。`MAX_NEW_SUMMARIES_PER_RUN`は
+最終防衛ラインの安全弁として残すが、値は600に引き上げた。
+
+また、「特定の国だけ記事がほぼ無い」状態への対応として、主プロバイダ(Google News RSS)の
+取得件数が`MIN_ARTICLES_BEFORE_FALLBACK`件未満、または取得自体が失敗した場合に、
+NewsData.ioへ自動フォールバックする処理を追加した（`src/lib/news/index.ts`の
+`getFallbackNewsProvider`、`src/lib/pipeline.ts`の`fetchCountry`）。次回の巡回を待たず、
+その場で自己修復を試みる。
+
 ## 出典
 
 - [System Design: News Aggregator (100K Sources, Dedup, Personalized Ranking)](https://crackingwalnuts.com/post/news-aggregator-system-design)
