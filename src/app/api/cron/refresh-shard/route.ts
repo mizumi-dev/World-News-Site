@@ -17,8 +17,12 @@ export const maxDuration = 60;
  * これにより、GitHub Actions 側は単に一定間隔で叩くだけでよく、
  * サーバー側の状態やロックを持たずに「今どの国の番か」を再現できる。
  */
-const SHARD_INTERVAL_MINUTES = 30;
-const NUM_SHARDS = 6;
+// トピック別フィード導入で1国あたりの記事数が10件から最大150件に増えたため、
+// 1回のシャードで扱う国数を減らし、その分実行間隔を短くして一巡時間を維持する。
+// 3カ国/回 × 15分間隔 = 全33カ国を約2.75時間で一巡する。
+// ワークフロー(.github/workflows/scheduled-refresh.yml)のcron式と必ず揃えること。
+const SHARD_INTERVAL_MINUTES = 15;
+const NUM_SHARDS = 11;
 
 function currentShardCountries(): { shardIndex: number; codes: string[] } {
   const shardIndex =
@@ -38,6 +42,6 @@ export async function GET(request: NextRequest) {
   }
 
   const { shardIndex, codes } = currentShardCountries();
-  const results = await refreshCountries(codes, false);
-  return NextResponse.json({ shardIndex, numShards: NUM_SHARDS, results });
+  const { results, stats } = await refreshCountries(codes, false);
+  return NextResponse.json({ shardIndex, numShards: NUM_SHARDS, stats, results });
 }

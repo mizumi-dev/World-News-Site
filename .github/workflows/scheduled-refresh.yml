@@ -8,7 +8,9 @@ name: Scheduled news refresh
 #   CRON_SECRET  - Vercel側の環境変数 CRON_SECRET と同じ値
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    # src/app/api/cron/refresh-shard/route.ts の SHARD_INTERVAL_MINUTES と揃えること。
+    # ずれるとシャード番号の進み方と実行間隔が合わず、更新されない国が出る。
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:

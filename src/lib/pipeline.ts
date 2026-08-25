@@ -18,8 +18,12 @@ export interface RefreshResult {
   ok: boolean;
   count: number;
   error?: string;
-  /** ニュース取得は成功したが要約に失敗した場合の理由 */
+  /** ニュース取得は成功したが、要約が揃わなかった場合の理由 */
   warning?: string;
+  /** 記事を取得せずキャッシュをそのまま使った場合に true */
+  cached?: boolean;
+  /** 表示記事のうち要約がまだ無い件数。0でなければ次回実行で埋まる */
+  pending?: number;
 }
 
 const MAX_ARTICLES_PER_COUNTRY = Number(process.env.MAX_ARTICLES_PER_COUNTRY ?? 10);
@@ -28,11 +32,15 @@ const CACHE_TTL_MINUTES = Number(process.env.CACHE_TTL_MINUTES ?? 15);
 const SUMMARIZE_CHUNK_SIZE = 10;
 /**
  * 1回のrefreshCountries呼び出しで新規に要約するdedupKeyの上限。
- * トピック別フィード導入で取得量が大きく増えたため、何らかの異常（フィード側の変化、
- * 重複判定の精度低下など）で新規記事が急増してもAIコストが青天井にならないようにする安全弁。
- * 上限を超えた分は要約なしのまま返り、次回の実行で改めて対象になる。
+ * 目的は2つある。
+ * (1) AIコストの安全弁。フィード側の変化や重複判定の精度低下で新規記事が急増しても青天井にしない。
+ * (2) 実行時間の制御。要約は SUMMARIZE_CHUNK_SIZE 件ずつ並列で投げるため、上限が大きいほど
+ *     同時リクエスト数が増え、Vercelの実行時間上限(60秒)を超えるリスクが上がる。
+ *     150件 = 15並列程度に抑えている。
+ * 上限を超えた分は要約なしのまま返り、次回の実行で改めて対象になる（要約は1年キャッシュされるので
+ * 数回の実行で自然に埋まる）。これは異常ではないので、エラーとしては報告しない。
  */
-const MAX_NEW_SUMMARIES_PER_RUN = Number(process.env.MAX_NEW_SUMMARIES_PER_RUN ?? 300);
+const MAX_NEW_SUMMARIES_PER_RUN = Number(process.env.MAX_NEW_SUMMARIES_PER_RUN ?? 150);
 
 type CountryState =
   | { code: string; status: "invalid" }
@@ -112,7 +120,24 @@ async function mergeByEmbeddingIfEnabled(
  * 国をまたいで1回だけ要約する。要約は dedupKey 単位でキャッシュを共有するため、
  * 別の国が既に要約済みの記事は再要約しない。
  */
-export async function refreshCountries(codes: string[], force = false): Promise<RefreshResult[]> {
+export interface RefreshRun {
+  results: RefreshResult[];
+  /** 実行全体の診断値。ログから状況を数字で追えるようにするためのもの */
+  stats: {
+    /** 今回ニュースを取得した記事数（キャッシュ利用国は含まない） */
+    fetched: number;
+    /** 重複排除後のユニークな記事数 */
+    unique: number;
+    /** 既に要約がキャッシュされていた数 */
+    cachedSummaries: number;
+    /** 今回新たに要約した数 */
+    newSummaries: number;
+    /** 上限に達して次回送りにした数 */
+    deferred: number;
+  };
+}
+
+export async function refreshCountries(codes: string[], force = false): Promise<RefreshRun> {
   const countryStates = await Promise.all(codes.map((code) => fetchCountry(code, force)));
 
   const toSummarize = countryStates.filter((s) => s.status === "fetched");
@@ -134,10 +159,15 @@ export async function refreshCountries(codes: string[], force = false): Promise<
       representativeByDedupKey.set(dedupKey, article);
     }
   }
-  const representatives = [...representativeByDedupKey.entries()].slice(
-    0,
-    MAX_NEW_SUMMARIES_PER_RUN,
-  );
+  const allRepresentatives = [...representativeByDedupKey.entries()];
+  const representatives = allRepresentatives.slice(0, MAX_NEW_SUMMARIES_PER_RUN);
+  // 上限で今回見送った件数。これは異常ではなく、次回実行で要約される（要約は1年キャッシュされる）
+  const deferredCount = allRepresentatives.length - representatives.length;
+  if (deferredCount > 0) {
+    console.log(
+      `[summarize] 新規要約の上限(${MAX_NEW_SUMMARIES_PER_RUN}件)に達したため、${deferredCount}件を次回に持ち越します`,
+    );
+  }
 
   const newSummaries: Record<string, SummaryEntry> = {};
   let summarizeError: string | undefined;
@@ -167,7 +197,7 @@ export async function refreshCountries(codes: string[], force = false): Promise<
 
   const allSummaries = { ...cachedSummaries, ...newSummaries };
 
-  return Promise.all(
+  const results = await Promise.all(
     countryStates.map(async (state): Promise<RefreshResult> => {
       if (state.status === "invalid") {
         return { code: state.code, ok: false, count: 0, error: `未対応の国コードです: ${state.code}` };
@@ -176,7 +206,7 @@ export async function refreshCountries(codes: string[], force = false): Promise<
         return { code: state.code, ok: false, count: 0, error: state.error };
       }
       if (state.status === "fresh") {
-        return { code: state.code, ok: true, count: state.articles.length };
+        return { code: state.code, ok: true, count: state.articles.length, cached: true };
       }
 
       const withSummary = state.articles.map((article) => {
@@ -218,15 +248,40 @@ export async function refreshCountries(codes: string[], force = false): Promise<
 
       await setCountryCache(state.code, { articles, fetchedAt: new Date().toISOString() });
 
-      const hasUnsummarized = articles.some((a) => !a.titleJa || !a.summaryJa);
+      const pending = articles.filter((a) => !a.titleJa || !a.summaryJa).length;
+
+      // 要約が揃わない理由は3つあり、区別しないと原因の切り分けができない。
+      // (1) Qwen APIが実際に失敗した (2) 1回あたりの新規要約上限に達して次回送りになった
+      // (3) それ以外（想定外）。(2)は正常な挙動なのでエラーとして報告しない。
+      let warning: string | undefined;
+      if (pending > 0) {
+        if (summarizeError) {
+          warning = `AI要約に失敗しました: ${summarizeError}`;
+        } else if (deferredCount > 0) {
+          warning = `新規要約の上限(${MAX_NEW_SUMMARIES_PER_RUN}件/回)に達したため、${pending}件は次回の実行で要約されます`;
+        } else {
+          warning = `${pending}件の要約が生成されませんでした（AI応答に該当記事が含まれていない可能性があります）`;
+        }
+      }
+
       return {
         code: state.code,
         ok: true,
         count: articles.length,
-        warning: hasUnsummarized
-          ? `AI要約に失敗しました: ${summarizeError ?? "不明なエラー"}`
-          : undefined,
+        pending: pending > 0 ? pending : undefined,
+        warning,
       };
     }),
   );
+
+  const stats = {
+    fetched: allFetchedArticles.length,
+    unique: uniqueDedupKeys.length,
+    cachedSummaries: Object.keys(cachedSummaries).length,
+    newSummaries: Object.keys(newSummaries).length,
+    deferred: deferredCount,
+  };
+  console.log("[refresh] stats:", JSON.stringify(stats));
+
+  return { results, stats };
 }

@@ -22,6 +22,6 @@ export async function GET(request: NextRequest) {
   }
 
   const codes = COUNTRIES.map((c) => c.code);
-  const results = await refreshCountries(codes, false);
-  return NextResponse.json({ results });
+  const { results, stats } = await refreshCountries(codes, false);
+  return NextResponse.json({ stats, results });
 }

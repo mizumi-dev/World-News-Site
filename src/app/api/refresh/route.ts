@@ -41,6 +41,6 @@ export async function POST(request: NextRequest) {
   }
 
   const force = body.force === true;
-  const results = await refreshCountries(countries, force);
-  return NextResponse.json({ results });
+  const { results, stats } = await refreshCountries(countries, force);
+  return NextResponse.json({ stats, results });
 }
