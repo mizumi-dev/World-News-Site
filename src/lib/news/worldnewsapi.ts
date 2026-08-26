@@ -90,6 +90,7 @@ export function createWorldNewsApiProvider(country: Country): NewsProvider {
           url: r.url!,
           publishedAt: toIso(r.publish_date),
           imageUrl: r.image ?? null,
+          sourceDomain: new URL(r.url!).hostname,
           excerptForSummary: r.summary ?? r.text?.slice(0, 200) ?? undefined,
         }));
     },

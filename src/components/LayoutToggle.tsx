@@ -12,7 +12,7 @@ export function LayoutToggle({
       <button
         onClick={() => onChange("newspaper")}
         className={`px-3 py-1.5 ${
-          layout === "newspaper" ? "bg-blue-600 text-white" : "bg-transparent"
+          layout === "newspaper" ? "bg-accent text-white" : "bg-transparent"
         }`}
       >
         新聞風
@@ -20,7 +20,7 @@ export function LayoutToggle({
       <button
         onClick={() => onChange("matome")}
         className={`px-3 py-1.5 ${
-          layout === "matome" ? "bg-blue-600 text-white" : "bg-transparent"
+          layout === "matome" ? "bg-accent text-white" : "bg-transparent"
         }`}
       >
         まとめ風

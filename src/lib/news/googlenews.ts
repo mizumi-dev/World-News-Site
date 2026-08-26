@@ -44,6 +44,17 @@ function decodeEntities(text: string): string {
     .replace(/<[^>]+>/g, "");
 }
 
+/** <source url="https://..."> の url 属性からホスト名を取り出す。favicon表示に使う */
+function extractSourceDomain(item: string): string | undefined {
+  const m = item.match(/<source[^>]*\surl=["']([^"']+)["']/i);
+  if (!m) return undefined;
+  try {
+    return new URL(m[1]).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 function extractTag(xml: string, tag: string): string | null {
   const cdata = xml.match(new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*</${tag}>`, "i"));
   if (cdata) return cdata[1].trim();
@@ -117,6 +128,7 @@ async function fetchFeed(
         url: link,
         publishedAt: toIso(extractTag(item, "pubDate")),
         imageUrl: null,
+        sourceDomain: extractSourceDomain(item),
         excerptForSummary: description ?? undefined,
       };
     })

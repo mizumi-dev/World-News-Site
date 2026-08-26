@@ -11,3 +11,13 @@ export function pickDisplayText(
   }
   return { title: article.titleJa ?? article.originalTitle, summary: article.summaryJa };
 }
+
+/**
+ * 出典サイトの favicon を Google の無料 favicon サービス経由で取得するURLを返す。
+ * 画像はブラウザが直接読み込むため、サーバー側のAI/キャッシュコストは増えない。
+ * ドメインが不明な場合は null を返す（呼び出し側で非表示にする）。
+ */
+export function sourceFaviconUrl(domain?: string): string | null {
+  if (!domain) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+}

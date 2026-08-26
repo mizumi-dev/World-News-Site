@@ -12,6 +12,8 @@ export interface Article {
   url: string;
   publishedAt: string;
   imageUrl?: string | null;
+  /** 出典サイトのドメイン（favicon表示用）。RSSの<source url="...">や記事URLのホスト名から取得する */
+  sourceDomain?: string;
   /** 要約の入力にのみ使う原文抜粋。本文は保存・表示しない */
   excerptForSummary?: string;
 }

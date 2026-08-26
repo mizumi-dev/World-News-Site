@@ -138,13 +138,22 @@ export default function Home() {
 
   return (
     <div className="max-w-5xl mx-auto w-full px-4 py-8 flex flex-col gap-6">
-      <header className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-xl font-bold">世界ニュースまとめ（プロトタイプ）</h1>
-          <div className="flex items-center gap-2 shrink-0">
-            <LanguageToggle language={language} onChange={setLanguage} />
-            <LayoutToggle layout={layout} onChange={setLayout} />
-          </div>
+      <header className="flex flex-col gap-5">
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <LanguageToggle language={language} onChange={setLanguage} />
+          <LayoutToggle layout={layout} onChange={setLayout} />
+        </div>
+        <div className="masthead animate-rise-in">
+          <p className="text-[11px] tracking-[0.2em] text-black/50 dark:text-white/50">
+            {new Date().toLocaleDateString("ja-JP", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              weekday: "long",
+            })}
+          </p>
+          <h1 className="masthead-title">世界ニュース</h1>
+          <p className="masthead-subtitle">AI要約で読む 33カ国の新着ニュース</p>
         </div>
         <CountrySelector selected={selectedCountries} onChange={setSelectedCountries} />
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
