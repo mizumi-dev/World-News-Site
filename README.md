@@ -6,6 +6,7 @@
 
 | ファイル | 内容 |
 |---------|------|
+| [AGENTS.md](AGENTS.md) | AIコーディングエージェント向けの前提知識（全体の流れ、設計上の制約、やってはいけないこと） |
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | 要件定義（MVPスコープ、受け入れ条件、非対象） |
 | [docs/SPEC.md](docs/SPEC.md) | 技術仕様（スタック、ディレクトリ構成、API/データ設計、UI仕様） |
 | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | 実装手順書（フェーズ分割とフェーズごとの完了条件） |
@@ -15,13 +16,15 @@
 
 - **対応国**: 9地域33カ国（`src/lib/config/countries.ts`）。地域別にグルーピングして選択できる
 - **ニュース取得**: Google News RSS（総合＋トピック別フィードを統合。無料・APIキー不要）。`NewsData.io`/`World News API`にも切替可能
-- **AI要約**: Qwen API（Alibaba Cloud、`qwen3.7-flash`、コスト最優先）で日本語見出し・1〜2文要約・タグ付け
+- **AI要約**: Qwen API（Alibaba Cloud、`qwen3.7-flash`、コスト最優先）で見出し・1〜2文要約・タグ付け。日本語と英語を1回のリクエストで同時生成し、画面上のトグルで表示言語を切り替えられる
 - **タグ**: 12種の固定タグに色付き表示。Google Newsのトピック別フィード由来の記事はタグが確定し、AIの推測を使わない
-- **検索**: 見出し・要約の全文検索
+- **検索**: 見出し・要約の全文検索。表示中の言語に関わらず、日本語・英語・原題のすべてを対象に検索する
+- **設定の保持**: 選択中の国・レイアウト・タグ絞り込み・表示言語をブラウザのlocalStorageに保存し、次回アクセス時に復元する（ログイン機能は持たない）
 - **レイアウト**: 新聞風／2chまとめ風をトグルで切替。新聞風は選択国数に応じて紙面割りが自動決定
 - **技術**: Next.js (App Router, TypeScript) + Tailwind CSS
 - **更新方式**: 収集と配信を分離。裏側でGitHub Actions（高頻度・シャード分割）とVercel Cron（1日1回の補修）が自動更新し、閲覧はISRキャッシュを読むだけ。手動更新ボタンは無い（`/api/refresh`は認証必須で、公開後の無制限なAI課金消費を防ぐため）
-- **キャッシュ**: ローカル開発はファイル(`.cache/`)、Vercel等へのデプロイ時はUpstash Redis(永続化)を自動使用。要約は`dedupKey`単位で1年保持し、同じ記事の再要約を避ける
+- **キャッシュ**: ローカル開発はファイル(`.cache/`)、Vercel等へのデプロイ時はUpstash Redis(永続化)を自動使用。要約は`dedupKey`単位で7日保持し、同じ記事の再要約を避ける
+- **自己修復**: ニュース取得が失敗または記事数が少なすぎる場合は別プロバイダに自動フォールバックする。AI要約は件数ではなく時間予算で打ち切るため、要約しきれなかった記事は次回以降の実行で自動的に埋まる
 
 ## APIキーの取得方法
 
@@ -71,9 +74,12 @@ curl -X POST http://localhost:3000/api/refresh \
 ## 自動更新の設定（GitHub Actions）
 
 Vercel Hobbyプランのcronは1日1回しか実行できないため、高頻度の自動更新は
-GitHub Actions（`.github/workflows/scheduled-refresh.yml`）が担当する。30分毎に
+GitHub Actions（`.github/workflows/scheduled-refresh.yml`）が担当する。15分毎に
 `/api/cron/refresh-shard` を叩き、呼び出し時刻から自動計算される「担当国(シャード)」だけを
-更新する。6シャード×30分間隔で、全33カ国を3時間で一巡する。
+更新する。11シャード×15分間隔で、全33カ国を約2時間45分で一巡する。
+
+シャード数や間隔を変える場合は、`src/app/api/cron/refresh-shard/route.ts` の
+`SHARD_INTERVAL_MINUTES` / `NUM_SHARDS` と、ワークフローのcron式を**必ず対で**変更すること。
 
 設定手順:
 
