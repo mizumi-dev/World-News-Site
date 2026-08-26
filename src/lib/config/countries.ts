@@ -43,10 +43,15 @@ export const COUNTRIES: Country[] = [
   { code: "us", nameJa: "アメリカ", flag: "🇺🇸", region: "北米", langHint: "en" },
   { code: "ca", nameJa: "カナダ", flag: "🇨🇦", region: "北米", langHint: "en" },
   { code: "mx", nameJa: "メキシコ", flag: "🇲🇽", region: "北米", langHint: "es" },
+  { code: "cu", nameJa: "キューバ", flag: "🇨🇺", region: "北米", langHint: "es" },
 
   // 南米
   { code: "br", nameJa: "ブラジル", flag: "🇧🇷", region: "南米", langHint: "pt" },
   { code: "ar", nameJa: "アルゼンチン", flag: "🇦🇷", region: "南米", langHint: "es" },
+  { code: "cl", nameJa: "チリ", flag: "🇨🇱", region: "南米", langHint: "es" },
+  { code: "pe", nameJa: "ペルー", flag: "🇵🇪", region: "南米", langHint: "es" },
+  { code: "co", nameJa: "コロンビア", flag: "🇨🇴", region: "南米", langHint: "es" },
+  { code: "ve", nameJa: "ベネズエラ", flag: "🇻🇪", region: "南米", langHint: "es" },
 
   // ヨーロッパ
   { code: "gb", nameJa: "イギリス", flag: "🇬🇧", region: "ヨーロッパ", langHint: "en" },
@@ -55,6 +60,17 @@ export const COUNTRIES: Country[] = [
   { code: "it", nameJa: "イタリア", flag: "🇮🇹", region: "ヨーロッパ", langHint: "it" },
   { code: "es", nameJa: "スペイン", flag: "🇪🇸", region: "ヨーロッパ", langHint: "es" },
   { code: "ru", nameJa: "ロシア", flag: "🇷🇺", region: "ヨーロッパ", langHint: "ru" },
+  { code: "ua", nameJa: "ウクライナ", flag: "🇺🇦", region: "ヨーロッパ", langHint: "uk" },
+  { code: "se", nameJa: "スウェーデン", flag: "🇸🇪", region: "ヨーロッパ", langHint: "sv" },
+  { code: "pl", nameJa: "ポーランド", flag: "🇵🇱", region: "ヨーロッパ", langHint: "pl" },
+  { code: "gr", nameJa: "ギリシャ", flag: "🇬🇷", region: "ヨーロッパ", langHint: "el" },
+  { code: "pt", nameJa: "ポルトガル", flag: "🇵🇹", region: "ヨーロッパ", langHint: "pt" },
+  { code: "nl", nameJa: "オランダ", flag: "🇳🇱", region: "ヨーロッパ", langHint: "nl" },
+  { code: "ch", nameJa: "スイス", flag: "🇨🇭", region: "ヨーロッパ", langHint: "de" },
+  { code: "at", nameJa: "オーストリア", flag: "🇦🇹", region: "ヨーロッパ", langHint: "de" },
+  { code: "no", nameJa: "ノルウェー", flag: "🇳🇴", region: "ヨーロッパ", langHint: "no" },
+  { code: "fi", nameJa: "フィンランド", flag: "🇫🇮", region: "ヨーロッパ", langHint: "fi" },
+  { code: "ie", nameJa: "アイルランド", flag: "🇮🇪", region: "ヨーロッパ", langHint: "en" },
 
   // 中東
   { code: "ae", nameJa: "アラブ首長国連邦", flag: "🇦🇪", region: "中東", langHint: "en" },
@@ -67,6 +83,7 @@ export const COUNTRIES: Country[] = [
   { code: "ng", nameJa: "ナイジェリア", flag: "🇳🇬", region: "アフリカ", langHint: "en" },
   { code: "za", nameJa: "南アフリカ", flag: "🇿🇦", region: "アフリカ", langHint: "en" },
   { code: "eg", nameJa: "エジプト", flag: "🇪🇬", region: "アフリカ", langHint: "ar" },
+  { code: "gh", nameJa: "ガーナ", flag: "🇬🇭", region: "アフリカ", langHint: "en" },
 
   // オセアニア
   { code: "au", nameJa: "オーストラリア", flag: "🇦🇺", region: "オセアニア", langHint: "en" },
