@@ -55,7 +55,7 @@ export function CountrySelector({
                 <span className={`transition-transform ${isOpen ? "rotate-90" : ""}`}>▸</span>
                 {region}
                 {selectedCount > 0 && (
-                  <span className="text-xs text-blue-600 font-normal">({selectedCount})</span>
+                  <span className="text-xs text-accent font-normal">({selectedCount})</span>
                 )}
               </span>
             </button>
@@ -69,7 +69,7 @@ export function CountrySelector({
                       onClick={() => toggleCountry(country.code)}
                       className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
                         isSelected
-                          ? "bg-blue-600 text-white border-blue-600"
+                          ? "bg-accent text-white border-accent"
                           : "bg-transparent border-black/15 text-black/70 dark:text-white/70"
                       }`}
                     >

@@ -12,7 +12,7 @@ export function LanguageToggle({
       <button
         onClick={() => onChange("ja")}
         className={`px-3 py-1.5 ${
-          language === "ja" ? "bg-blue-600 text-white" : "bg-transparent"
+          language === "ja" ? "bg-accent text-white" : "bg-transparent"
         }`}
       >
         日本語
@@ -20,7 +20,7 @@ export function LanguageToggle({
       <button
         onClick={() => onChange("en")}
         className={`px-3 py-1.5 ${
-          language === "en" ? "bg-blue-600 text-white" : "bg-transparent"
+          language === "en" ? "bg-accent text-white" : "bg-transparent"
         }`}
       >
         English

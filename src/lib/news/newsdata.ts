@@ -22,6 +22,16 @@ function articleId(url: string): string {
   return createHash("sha256").update(url).digest("hex").slice(0, 16);
 }
 
+/** 記事URLからホスト名を取り出す。favicon表示に使う */
+function hostnameOf(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 function toIso(pubDate: string | undefined): string {
   if (!pubDate) return new Date().toISOString();
   // NewsData.io は "YYYY-MM-DD HH:mm:ss" (UTC) 形式で返す
@@ -96,6 +106,7 @@ export function createNewsDataProvider(country: Country): NewsProvider {
           url: r.link!,
           publishedAt: toIso(r.pubDate),
           imageUrl: r.image_url ?? null,
+          sourceDomain: hostnameOf(r.link),
           excerptForSummary: r.description ?? undefined,
         }));
     },

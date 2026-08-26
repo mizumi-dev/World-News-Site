@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Country } from "@/lib/config/countries";
 import { TagBadge } from "@/components/TagBadge";
+import { SourceLogo } from "@/components/SourceLogo";
 import type { DisplayLanguage } from "@/components/LanguageToggle";
 import { pickDisplayText } from "@/lib/news/display";
 import type { CountryNewsMap } from "@/types";
@@ -52,7 +53,7 @@ export function MatomeLayout({
         return (
           <section
             key={country.code}
-            className="border border-black/10 dark:border-white/15 rounded-lg overflow-hidden"
+            className="border border-black/10 dark:border-white/15 rounded-lg overflow-hidden shadow-sm animate-rise-in"
           >
             <h2>
               <button
@@ -103,7 +104,11 @@ export function MatomeLayout({
                             {summary}
                           </p>
                         )}
-                        <p className="text-xs text-black/40 dark:text-white/40">{article.sourceName}</p>
+                        <SourceLogo
+                          domain={article.sourceDomain}
+                          name={article.sourceName}
+                          className="text-xs text-black/40 dark:text-white/40"
+                        />
                       </div>
                     );
                   })}

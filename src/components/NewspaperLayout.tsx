@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { COUNTRIES, type Country } from "@/lib/config/countries";
 import { TagBadge } from "@/components/TagBadge";
+import { SourceLogo } from "@/components/SourceLogo";
 import type { DisplayLanguage } from "@/components/LanguageToggle";
 import { pickDisplayText } from "@/lib/news/display";
 import type { CountryNewsMap } from "@/types";
@@ -138,7 +139,7 @@ export function NewspaperLayout({
   const [shownBySlot, setShownBySlot] = useState<Record<number, number>>({});
 
   return (
-    <div className="font-serif grid grid-cols-1 md:grid-cols-6 gap-6">
+    <div className="font-serif grid grid-cols-1 md:grid-cols-6 gap-6 bg-paper p-4 sm:p-6 border border-black/10 dark:border-white/10 rounded-md shadow-sm animate-rise-in">
       {slots.map((slot, i) => {
         const assignedCode = sectionOverrides[i] ?? countries[i]?.code ?? countries[0]?.code;
         const country = COUNTRIES.find((c) => c.code === assignedCode) ?? countries[0];
@@ -171,9 +172,10 @@ export function NewspaperLayout({
                         key={article.id}
                         className={
                           isLead
-                            ? "flex flex-col gap-1"
-                            : "flex flex-col gap-0.5 border-t border-black/10 dark:border-white/10 pt-2"
+                            ? "flex flex-col gap-1 pb-3 border-b border-black/15 dark:border-white/10 animate-rise-in"
+                            : "flex flex-col gap-0.5 border-t border-black/10 dark:border-white/10 pt-2 animate-rise-in"
                         }
+                        style={{ animationDelay: `${Math.min(articleIndex, 8) * 30}ms` }}
                       >
                         <TagBadge tagId={article.tag} />
                         <h3 className={isLead ? leadHeadlineClass(slot.size) : "text-sm font-semibold leading-snug"}>
@@ -181,7 +183,7 @@ export function NewspaperLayout({
                             href={article.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="hover:underline"
+                            className="hover:underline decoration-black/30 dark:decoration-white/30 underline-offset-2"
                           >
                             {title}
                           </a>
@@ -197,9 +199,11 @@ export function NewspaperLayout({
                             {summary}
                           </p>
                         )}
-                        <p className="text-[11px] text-black/40 dark:text-white/40">
-                          {article.sourceName}
-                        </p>
+                        <SourceLogo
+                          domain={article.sourceDomain}
+                          name={article.sourceName}
+                          className="text-[11px] text-black/40 dark:text-white/40"
+                        />
                       </article>
                     );
                   })}
